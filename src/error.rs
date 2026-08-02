@@ -1,6 +1,6 @@
 use axum::{
     Json,
-    http::StatusCode,
+    http::{HeaderValue, StatusCode, header},
     response::{IntoResponse, Response},
 };
 use serde::Serialize;
@@ -35,6 +35,7 @@ struct ErrorDetail {
 
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
+        let retry_after = matches!(&self, Self::Busy);
         let (status, code) = match self {
             Self::BadRequest(_) => (StatusCode::BAD_REQUEST, "bad_request"),
             Self::Upstream { .. } => (StatusCode::BAD_GATEWAY, "upstream_error"),
@@ -49,6 +50,24 @@ impl IntoResponse for AppError {
                 message: self.to_string(),
             },
         };
-        (status, Json(body)).into_response()
+        let mut response = (status, Json(body)).into_response();
+        if retry_after {
+            response
+                .headers_mut()
+                .insert(header::RETRY_AFTER, HeaderValue::from_static("1"));
+        }
+        response
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn busy_response_includes_retry_guidance() {
+        let response = AppError::Busy.into_response();
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(response.headers().get(header::RETRY_AFTER).unwrap(), "1");
     }
 }

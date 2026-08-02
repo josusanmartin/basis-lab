@@ -353,4 +353,36 @@ mod tests {
         assert!(validate_window(0, MAX_RANGE_MS + 1, 100, interval).is_err());
         assert!(validate_window(0, 60_000, MAX_LIMIT + 1, interval).is_err());
     }
+
+    #[test]
+    fn openapi_contract_covers_every_venue_and_comparison_field() {
+        let spec: Value = serde_json::from_str(include_str!("../web/openapi.json")).unwrap();
+        let documented_venues = spec
+            .pointer("/components/schemas/Venue/enum")
+            .and_then(Value::as_array)
+            .unwrap();
+        assert_eq!(documented_venues.len(), Venue::ALL.len());
+        for venue in Venue::ALL {
+            assert!(documented_venues.iter().any(|value| value == venue.id()));
+        }
+
+        let required = spec
+            .pointer("/components/schemas/ComparisonResponse/required")
+            .and_then(Value::as_array)
+            .unwrap();
+        for field in [
+            "formula",
+            "unit",
+            "scale",
+            "interval",
+            "approximation",
+            "candles",
+            "stats",
+            "matched_candles",
+            "dropped_left",
+            "dropped_right",
+        ] {
+            assert!(required.iter().any(|value| value == field));
+        }
+    }
 }

@@ -3,11 +3,12 @@ services:
     name: basis-lab
     runtime: docker
     plan: free
+    region: frankfurt
     healthCheckPath: /api/v1/health
     envVars:
       - key: RUST_LOG
         value: basis_lab=info,tower_http=warn
       - key: MAX_UPSTREAM_CONCURRENCY
         value: "32"
-    autoDeployTrigger: commit
-
+    autoDeployTrigger: checksPass
+    maxShutdownDelaySeconds: 30

@@ -3,32 +3,71 @@
   "info": {
     "title": "Basis Lab API",
     "version": "0.1.0",
-    "description": "Normalized OHLC and cross-venue premium/discount candles. All timestamps are Unix milliseconds and no authentication is required."
+    "description": "Read-only normalized venue OHLC and cross-venue premium/discount candles. Timestamps are Unix milliseconds. No authentication is required.",
+    "license": { "name": "MIT", "identifier": "MIT" }
   },
-  "servers": [{ "url": "/", "description": "Current deployment" }],
+  "servers": [{ "url": "/", "description": "Current Rust deployment" }],
+  "security": [],
+  "tags": [
+    { "name": "System", "description": "Runtime health and adapter capabilities" },
+    { "name": "Market data", "description": "Venue-native symbols and normalized OHLC" },
+    { "name": "Comparison", "description": "Timestamp-aligned synthetic ratio candles" }
+  ],
   "paths": {
     "/api/v1/health": {
-      "get": { "operationId": "health", "summary": "Service health", "responses": { "200": { "description": "Healthy" } } }
+      "get": {
+        "operationId": "health",
+        "summary": "Check service health",
+        "tags": ["System"],
+        "responses": {
+          "200": {
+            "description": "The Rust service is ready",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HealthResponse" } } }
+          }
+        }
+      }
     },
     "/api/v1/venues": {
-      "get": { "operationId": "listVenues", "summary": "List venue adapters and supported intervals", "responses": { "200": { "description": "Venue list" } } }
+      "get": {
+        "operationId": "listVenues",
+        "summary": "List adapters and supported intervals",
+        "tags": ["System"],
+        "responses": {
+          "200": {
+            "description": "All configured venue adapters",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/VenuesResponse" } } }
+          }
+        }
+      }
     },
     "/api/v1/markets": {
       "get": {
         "operationId": "listMarkets",
-        "summary": "Discover active markets on a venue",
+        "summary": "Discover active venue-native market symbols",
+        "tags": ["Market data"],
         "parameters": [
           { "$ref": "#/components/parameters/Venue" },
-          { "name": "query", "in": "query", "schema": { "type": "string", "default": "" } },
+          { "name": "query", "in": "query", "description": "Case-insensitive symbol substring", "schema": { "type": "string", "default": "", "maxLength": 64 } },
           { "name": "limit", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 1000, "default": 200 } }
         ],
-        "responses": { "200": { "description": "Active markets" }, "502": { "$ref": "#/components/responses/UpstreamError" } }
+        "responses": {
+          "200": {
+            "description": "Matching active markets",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MarketsResponse" } } }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "502": { "$ref": "#/components/responses/UpstreamError" },
+          "503": { "$ref": "#/components/responses/Busy" },
+          "504": { "$ref": "#/components/responses/UpstreamTimeout" }
+        }
       }
     },
     "/api/v1/candles": {
       "get": {
         "operationId": "getCandles",
         "summary": "Get normalized OHLC candles",
+        "description": "Returns ascending candles in the venue's native market notation. Source bars are bucket-aligned, validated, deduplicated, and range-limited.",
+        "tags": ["Market data"],
         "parameters": [
           { "$ref": "#/components/parameters/Venue" },
           { "$ref": "#/components/parameters/Market" },
@@ -37,26 +76,46 @@
           { "$ref": "#/components/parameters/To" },
           { "$ref": "#/components/parameters/Limit" }
         ],
-        "responses": { "200": { "description": "Normalized candles" }, "400": { "$ref": "#/components/responses/BadRequest" }, "502": { "$ref": "#/components/responses/UpstreamError" } }
+        "responses": {
+          "200": {
+            "description": "Normalized source candles",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CandleResponse" } } }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "502": { "$ref": "#/components/responses/UpstreamError" },
+          "503": { "$ref": "#/components/responses/Busy" },
+          "504": { "$ref": "#/components/responses/UpstreamTimeout" }
+        }
       }
     },
     "/api/v1/compare": {
       "get": {
         "operationId": "compareMarkets",
-        "summary": "Calculate premium/discount candles for two markets",
-        "description": "Calculates (left / right - 1) × scale. Open and close use like-for-like fields. High uses left.high/right.low and low uses left.low/right.high, a conservative envelope because OHLC data cannot prove simultaneous extremes.",
+        "summary": "Calculate cross-venue premium/discount candles",
+        "description": "Calculates (left / right - 1) × scale. Open and close use like-for-like fields. High uses left.high / right.low and low uses left.low / right.high, a conservative envelope because OHLC cannot prove simultaneous venue extremes. Only identical normalized opening timestamps are joined.",
+        "tags": ["Comparison"],
         "parameters": [
           { "name": "left_venue", "in": "query", "required": true, "schema": { "$ref": "#/components/schemas/Venue" } },
-          { "name": "left_market", "in": "query", "required": true, "schema": { "type": "string", "example": "WLFIUSDT" } },
+          { "name": "left_market", "in": "query", "required": true, "schema": { "$ref": "#/components/schemas/MarketSymbol" }, "example": "WLFIUSDT" },
           { "name": "right_venue", "in": "query", "required": true, "schema": { "$ref": "#/components/schemas/Venue" } },
-          { "name": "right_market", "in": "query", "required": true, "schema": { "type": "string", "example": "WLFI_USDT" } },
+          { "name": "right_market", "in": "query", "required": true, "schema": { "$ref": "#/components/schemas/MarketSymbol" }, "example": "WLFI_USDT" },
           { "$ref": "#/components/parameters/Interval" },
           { "$ref": "#/components/parameters/From" },
           { "$ref": "#/components/parameters/To" },
           { "$ref": "#/components/parameters/Limit" },
-          { "name": "scale", "in": "query", "schema": { "type": "number", "exclusiveMinimum": 0, "maximum": 1000000000, "default": 10000 } }
+          { "name": "scale", "in": "query", "description": "10000 expresses the ratio delta in basis points", "schema": { "type": "number", "format": "double", "exclusiveMinimum": 0, "maximum": 1000000000, "default": 10000 } }
         ],
-        "responses": { "200": { "description": "Comparison candles and summary statistics" }, "400": { "$ref": "#/components/responses/BadRequest" }, "422": { "description": "No timestamp overlap" }, "502": { "$ref": "#/components/responses/UpstreamError" } }
+        "responses": {
+          "200": {
+            "description": "Synthetic OHLC candles and close-series statistics",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ComparisonResponse" } } }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "422": { "$ref": "#/components/responses/NoOverlap" },
+          "502": { "$ref": "#/components/responses/UpstreamError" },
+          "503": { "$ref": "#/components/responses/Busy" },
+          "504": { "$ref": "#/components/responses/UpstreamTimeout" }
+        }
       }
     }
   },
@@ -65,20 +124,182 @@
       "Venue": {
         "type": "string",
         "enum": ["binance_spot", "binance_perp", "bybit_spot", "bybit_perp", "hyperliquid_perp", "lighter_perp", "aster_perp", "ondo_perp", "mexc_spot", "mexc_perp", "okx_spot", "okx_perp"]
+      },
+      "Interval": {
+        "type": "string",
+        "enum": ["1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "1d"]
+      },
+      "MarketSymbol": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 64,
+        "pattern": "^[A-Za-z0-9_.:/@-]+$",
+        "examples": ["BTCUSDT", "BTC_USDT", "BTC-USDT-SWAP", "BTC", "BTC-USD.P"]
+      },
+      "HealthResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["status", "service", "version", "time"],
+        "properties": {
+          "status": { "type": "string", "const": "ok" },
+          "service": { "type": "string", "const": "basis-lab" },
+          "version": { "type": "string", "example": "0.1.0" },
+          "time": { "type": "string", "format": "date-time" }
+        }
+      },
+      "VenueInfo": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "label", "market_type", "intervals", "symbol_example"],
+        "properties": {
+          "id": { "$ref": "#/components/schemas/Venue" },
+          "label": { "type": "string", "example": "Bybit Perpetual" },
+          "market_type": { "type": "string", "enum": ["spot", "perpetual"] },
+          "intervals": { "type": "array", "minItems": 1, "items": { "$ref": "#/components/schemas/Interval" } },
+          "symbol_example": { "$ref": "#/components/schemas/MarketSymbol" }
+        }
+      },
+      "VenuesResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["data"],
+        "properties": { "data": { "type": "array", "minItems": 12, "items": { "$ref": "#/components/schemas/VenueInfo" } } }
+      },
+      "Market": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["symbol", "base", "quote", "active"],
+        "properties": {
+          "symbol": { "$ref": "#/components/schemas/MarketSymbol" },
+          "base": { "type": "string", "example": "BTC" },
+          "quote": { "type": "string", "example": "USDT" },
+          "active": { "type": "boolean" }
+        }
+      },
+      "MarketsResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["venue", "data"],
+        "properties": {
+          "venue": { "$ref": "#/components/schemas/Venue" },
+          "data": { "type": "array", "items": { "$ref": "#/components/schemas/Market" } }
+        }
+      },
+      "Candle": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["time", "open", "high", "low", "close"],
+        "properties": {
+          "time": { "type": "integer", "format": "int64", "minimum": 0, "description": "Candle opening timestamp in Unix milliseconds" },
+          "open": { "type": "number", "format": "double", "exclusiveMinimum": 0 },
+          "high": { "type": "number", "format": "double", "exclusiveMinimum": 0 },
+          "low": { "type": "number", "format": "double", "exclusiveMinimum": 0 },
+          "close": { "type": "number", "format": "double", "exclusiveMinimum": 0 },
+          "volume": { "type": "number", "format": "double", "minimum": 0 }
+        }
+      },
+      "CandleResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["venue", "market", "interval", "count", "candles"],
+        "properties": {
+          "venue": { "$ref": "#/components/schemas/Venue" },
+          "market": { "$ref": "#/components/schemas/MarketSymbol" },
+          "interval": { "$ref": "#/components/schemas/Interval" },
+          "count": { "type": "integer", "minimum": 0, "maximum": 1500 },
+          "candles": { "type": "array", "maxItems": 1500, "items": { "$ref": "#/components/schemas/Candle" } }
+        }
+      },
+      "ComparisonCandle": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["time", "open", "high", "low", "close", "left_close", "right_close"],
+        "properties": {
+          "time": { "type": "integer", "format": "int64", "minimum": 0 },
+          "open": { "type": "number", "format": "double" },
+          "high": { "type": "number", "format": "double" },
+          "low": { "type": "number", "format": "double" },
+          "close": { "type": "number", "format": "double" },
+          "left_close": { "type": "number", "format": "double", "exclusiveMinimum": 0 },
+          "right_close": { "type": "number", "format": "double", "exclusiveMinimum": 0 }
+        }
+      },
+      "ComparisonStats": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["latest", "mean", "standard_deviation", "minimum", "maximum", "z_score"],
+        "properties": {
+          "latest": { "type": "number", "format": "double" },
+          "mean": { "type": "number", "format": "double" },
+          "standard_deviation": { "type": "number", "format": "double", "minimum": 0 },
+          "minimum": { "type": "number", "format": "double" },
+          "maximum": { "type": "number", "format": "double" },
+          "z_score": { "type": "number", "format": "double" }
+        }
+      },
+      "ComparisonResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["formula", "unit", "scale", "interval", "approximation", "candles", "stats", "matched_candles", "dropped_left", "dropped_right"],
+        "properties": {
+          "formula": { "type": "string", "example": "(bybit_perp:WLFIUSDT / mexc_perp:WLFI_USDT - 1) × 10000" },
+          "unit": { "type": "string", "enum": ["bps", "scaled ratio delta"] },
+          "scale": { "type": "number", "format": "double", "exclusiveMinimum": 0 },
+          "interval": { "$ref": "#/components/schemas/Interval" },
+          "approximation": { "type": "string" },
+          "candles": { "type": "array", "minItems": 1, "maxItems": 1500, "items": { "$ref": "#/components/schemas/ComparisonCandle" } },
+          "stats": { "$ref": "#/components/schemas/ComparisonStats" },
+          "matched_candles": { "type": "integer", "minimum": 1, "maximum": 1500 },
+          "dropped_left": { "type": "integer", "minimum": 0 },
+          "dropped_right": { "type": "integer", "minimum": 0 }
+        }
+      },
+      "ErrorDetail": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["code", "message"],
+        "properties": {
+          "code": { "type": "string", "enum": ["bad_request", "upstream_error", "upstream_timeout", "no_overlap", "busy", "internal_error"] },
+          "message": { "type": "string" }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["error"],
+        "properties": { "error": { "$ref": "#/components/schemas/ErrorDetail" } }
       }
     },
     "parameters": {
       "Venue": { "name": "venue", "in": "query", "required": true, "schema": { "$ref": "#/components/schemas/Venue" } },
-      "Market": { "name": "market", "in": "query", "required": true, "schema": { "type": "string", "example": "BTCUSDT" } },
-      "Interval": { "name": "interval", "in": "query", "required": true, "schema": { "type": "string", "enum": ["1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "1d"], "default": "1h" } },
-      "From": { "name": "from", "in": "query", "required": true, "description": "Unix milliseconds", "schema": { "type": "integer", "format": "int64" } },
-      "To": { "name": "to", "in": "query", "required": true, "description": "Unix milliseconds", "schema": { "type": "integer", "format": "int64" } },
-      "Limit": { "name": "limit", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 1500, "default": 1000 } }
+      "Market": { "name": "market", "in": "query", "required": true, "schema": { "$ref": "#/components/schemas/MarketSymbol" }, "example": "BTCUSDT" },
+      "Interval": { "name": "interval", "in": "query", "required": true, "schema": { "$ref": "#/components/schemas/Interval", "default": "1h" } },
+      "From": { "name": "from", "in": "query", "required": true, "description": "Inclusive lower bound in Unix milliseconds", "schema": { "type": "integer", "format": "int64", "minimum": 0 } },
+      "To": { "name": "to", "in": "query", "required": true, "description": "Exclusive upper bound in Unix milliseconds; must be later than from", "schema": { "type": "integer", "format": "int64", "minimum": 1 } },
+      "Limit": { "name": "limit", "in": "query", "description": "Maximum returned bars", "schema": { "type": "integer", "minimum": 1, "maximum": 1500, "default": 1000 } }
     },
     "responses": {
-      "BadRequest": { "description": "Invalid parameters" },
-      "UpstreamError": { "description": "The venue rejected or failed the request" }
+      "BadRequest": {
+        "description": "Invalid or unsafe query parameters",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" }, "example": { "error": { "code": "bad_request", "message": "limit must be between 1 and 1500" } } } }
+      },
+      "NoOverlap": {
+        "description": "The two normalized candle series have no identical opening timestamps",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" }, "example": { "error": { "code": "no_overlap", "message": "no candles overlap at identical timestamps" } } } }
+      },
+      "UpstreamError": {
+        "description": "A venue rejected or failed the public market-data request",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" }, "example": { "error": { "code": "upstream_error", "message": "venue `example` rejected the request" } } } }
+      },
+      "UpstreamTimeout": {
+        "description": "A venue exceeded the upstream deadline",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" }, "example": { "error": { "code": "upstream_timeout", "message": "venue `example` timed out" } } } }
+      },
+      "Busy": {
+        "description": "The bounded upstream queue did not acquire capacity within two seconds",
+        "headers": { "Retry-After": { "schema": { "type": "integer", "minimum": 1 }, "description": "Suggested retry delay in seconds" } },
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" }, "example": { "error": { "code": "busy", "message": "service is busy; retry shortly" } } } }
+      }
     }
   }
 }
-

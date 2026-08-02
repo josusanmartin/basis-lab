@@ -1,5 +1,7 @@
 # Basis Lab
 
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https%3A%2F%2Fgithub.com%2Fjosusanmartin%2Fbasis-lab)
+
 Basis Lab is a cross-venue OHLC premium/discount explorer for arbitrage research. It reproduces expressions such as:
 
 ```text
