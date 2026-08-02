@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Basis Lab API</title>
+  <style>
+    :root{font-family:Inter,ui-sans-serif,system-ui,sans-serif;color:#e8eaf0;background:#090b10}*{box-sizing:border-box}body{margin:0}main{max-width:900px;margin:auto;padding:48px 24px 96px}a{color:#79f2c0}code,pre{font-family:"SFMono-Regular",Consolas,monospace}pre{padding:18px;background:#11151d;border:1px solid #222936;border-radius:12px;white-space:pre-wrap;overflow:auto}h1{font-size:42px;letter-spacing:-.04em;margin-bottom:8px}h2{margin-top:42px}.muted{color:#8992a3}.method{font-size:12px;color:#07100d;background:#79f2c0;border-radius:5px;padding:3px 7px;margin-right:8px;font-weight:800}.route{font-family:monospace}.card{padding:20px;border:1px solid #222936;border-radius:14px;margin:14px 0;background:#0d1118}.params{font-size:14px;color:#aab2c1}button{background:#1b2430;color:#fff;border:1px solid #394657;border-radius:8px;padding:8px 12px;cursor:pointer}
+  </style>
+</head>
+<body><main>
+  <p><a href="/">← Chart</a></p>
+  <h1>Basis Lab API</h1>
+  <p class="muted">A zero-auth, read-only API for normalized venue candles and cross-market basis candles. Times are Unix milliseconds. Responses are JSON.</p>
+  <p><a href="/openapi.json">OpenAPI 3.1 specification</a></p>
+  <section class="card"><div><span class="method">GET</span><span class="route">/api/v1/venues</span></div><p class="params">Venue identifiers, market types, and supported intervals.</p></section>
+  <section class="card"><div><span class="method">GET</span><span class="route">/api/v1/markets</span></div><p class="params">venue, query?, limit?</p><pre>curl '<span class="origin"></span>/api/v1/markets?venue=bybit_perp&amp;query=WLFI'</pre></section>
+  <section class="card"><div><span class="method">GET</span><span class="route">/api/v1/candles</span></div><p class="params">venue, market, interval, from, to, limit?</p><pre id="candles"></pre></section>
+  <section class="card"><div><span class="method">GET</span><span class="route">/api/v1/compare</span></div><p class="params">left_venue, left_market, right_venue, right_market, interval, from, to, limit?, scale?</p><pre id="compare"></pre></section>
+  <h2>Comparison semantics</h2>
+  <p>The default <code>scale=10000</code> returns basis points: <code>(left / right - 1) × 10000</code>. Candle open and close use matching source fields. The high is <code>left.high / right.low</code>; low is <code>left.low / right.high</code>. These are conservative bounds because venue OHLC extremes may occur at different moments inside the bar.</p>
+  <h2>Operational limits</h2>
+  <p>Maximum 1,500 returned candles, 366-day range, 20,000 source intervals, bounded 15-second cache, 12 MiB upstream response cap, and a two-second concurrency queue. Upstream exchange limits can be lower.</p>
+</main><script>
+const now=Date.now(),from=now-7*864e5,o=location.origin;
+document.querySelectorAll('.origin').forEach(x=>x.textContent=o);
+document.querySelector('#candles').textContent=`curl '${o}/api/v1/candles?venue=bybit_perp&market=BTCUSDT&interval=1h&from=${from}&to=${now}&limit=168'`;
+document.querySelector('#compare').textContent=`curl '${o}/api/v1/compare?left_venue=bybit_perp&left_market=BTCUSDT&right_venue=binance_perp&right_market=BTCUSDT&interval=1h&from=${from}&to=${now}&limit=168&scale=10000'`;
+</script></body></html>

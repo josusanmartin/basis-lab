@@ -1,0 +1,30 @@
+app = "basis-lab"
+primary_region = "fra"
+
+[build]
+
+[env]
+  PORT = "8080"
+  MAX_UPSTREAM_CONCURRENCY = "64"
+  RUST_LOG = "basis_lab=info,tower_http=warn"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ["app"]
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "3s"
+    grace_period = "10s"
+    method = "GET"
+    path = "/api/v1/health"
+
+[[vm]]
+  memory = "256mb"
+  cpu_kind = "shared"
+  cpus = 1
+

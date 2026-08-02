@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: basis-lab
+    runtime: docker
+    plan: free
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: RUST_LOG
+        value: basis_lab=info,tower_http=warn
+      - key: MAX_UPSTREAM_CONCURRENCY
+        value: "32"
+    autoDeployTrigger: commit
+

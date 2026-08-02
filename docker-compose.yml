@@ -1,0 +1,14 @@
+services:
+  basis-lab:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      RUST_LOG: basis_lab=info,tower_http=warn
+      MAX_UPSTREAM_CONCURRENCY: "64"
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+

@@ -1,0 +1,13 @@
+{
+  "name": "basis-lab-e2e",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Browser QA for the Rust Basis Lab service",
+  "scripts": {
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.62.1"
+  }
+}

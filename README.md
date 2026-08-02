@@ -1,0 +1,107 @@
+# Basis Lab
+
+Basis Lab is a cross-venue OHLC premium/discount explorer for arbitrage research. It reproduces expressions such as:
+
+```text
+(BYBIT:WLFIUSDT.P / MEXC:WLFIUSDT - 1) × 10000
+```
+
+without downloading trades. A Rust service fetches venue candles concurrently, normalizes them, joins exact opening timestamps, and returns a synthetic candlestick series in basis points. The same service hosts a responsive, dependency-free canvas UI and a zero-auth JSON API.
+
+> Research tooling only. A visible spread is not executable profit. Fees, funding, borrow, slippage, latency, transfer constraints, and fill risk are not modeled.
+
+## Venue coverage
+
+| Adapter | Market |
+|---|---|
+| Binance | Spot, USDT perpetual |
+| Bybit | Spot, linear perpetual |
+| Hyperliquid | Perpetual |
+| Lighter | Perpetual |
+| Aster | Perpetual |
+| Ondo Perps | Perpetual |
+| MEXC | Spot, perpetual |
+| OKX | Spot, perpetual swap |
+
+All adapters use public, unauthenticated market-data APIs. Symbols retain each venue's native format—for example `BTCUSDT`, `BTC_USDT`, `BTC-USDT-SWAP`, `BTC`, or `BTC-USD.P`. Use the markets endpoint to discover them.
+
+## Run locally
+
+Requires Rust 1.85 or newer.
+
+```bash
+cargo run --release
+```
+
+Open <http://localhost:8080>. Configuration:
+
+- `PORT` — listen port, default `8080`
+- `MAX_UPSTREAM_CONCURRENCY` — maximum active API request groups, default `64`
+- `RUST_LOG` — tracing filter, default `basis_lab=info,tower_http=info`
+
+Or use Docker:
+
+```bash
+docker compose up --build
+```
+
+## API
+
+Interactive examples are at `/docs`; the machine-readable contract is `/openapi.json`.
+
+```bash
+NOW=$(date +%s%3N)
+FROM=$((NOW - 7 * 86400000))
+curl "http://localhost:8080/api/v1/compare?left_venue=bybit_perp&left_market=WLFIUSDT&right_venue=mexc_perp&right_market=WLFI_USDT&interval=1h&from=$FROM&to=$NOW&limit=170&scale=10000"
+```
+
+Endpoints:
+
+- `GET /api/v1/health`
+- `GET /api/v1/venues`
+- `GET /api/v1/markets?venue=bybit_perp&query=WLFI&limit=100`
+- `GET /api/v1/candles?venue=...&market=...&interval=...&from=...&to=...&limit=...`
+- `GET /api/v1/compare?left_venue=...&left_market=...&right_venue=...&right_market=...&interval=...&from=...&to=...&limit=...&scale=10000`
+
+Limits are enforced before upstream calls: 1,500 output candles, 366 calendar days, 20,000 source intervals, market identifiers up to 64 safe ASCII characters, a 12 MiB response cap, and a bounded concurrency queue. Successful source candles are cached for 15 seconds; market catalogs for five minutes. Both caches have fixed entry capacities.
+
+## Candle math
+
+For paired source candles `A` and `B`:
+
+```text
+open  = (A.open  / B.open  - 1) × scale
+close = (A.close / B.close - 1) × scale
+high  = (A.high  / B.low   - 1) × scale
+low   = (A.low   / B.high  - 1) × scale
+```
+
+With `scale=10000`, values are basis points. The high/low calculation is a conservative OHLC envelope, not a claim that venue extremes happened simultaneously. Deriving exact synthetic extremes would require synchronized trades or finer-grained bars. Only candles with identical normalized opening timestamps are joined; dropped counts are included in each response.
+
+## Verification
+
+```bash
+cargo fmt --check
+cargo test
+cargo clippy --all-targets --all-features -- -D warnings
+npm ci
+npx playwright install chromium
+npm run test:e2e
+```
+
+The E2E suite boots the Rust binary, loads the live Bybit/MEXC WLFI comparison, validates chart and analytics output, swaps legs, changes intervals, checks the API documentation, and repeats core checks at a mobile viewport. Because venue adapters call external APIs, the live adapter smoke test is intentionally separate from deterministic unit and browser tests.
+
+## Production notes
+
+- Rustls avoids an OpenSSL runtime dependency.
+- Graceful SIGINT/SIGTERM shutdown is enabled.
+- Upstream requests have connect and total deadlines with a small idle pool.
+- In-flight requests are canceled by the UI when superseded; refresh pauses in background tabs.
+- The chart caps device pixel ratio at 2 to avoid oversized backing buffers on dense displays.
+- `Dockerfile` uses an unprivileged runtime user and a stripped, LTO release binary.
+- `render.yaml` and `fly.toml` are included as deployment options.
+
+## License
+
+MIT
+

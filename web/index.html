@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#080a0e">
+  <meta name="description" content="Compare premium and discount candles across crypto spot and perpetual venues.">
+  <title>Basis Lab — Cross-venue premium explorer</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="/" aria-label="Basis Lab home">
+      <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+      <span>Basis Lab</span>
+    </a>
+    <div class="header-meta">
+      <span class="service-state"><i id="health-dot"></i><span id="health-label">Connecting</span></span>
+      <a href="/docs">API</a>
+      <a href="https://github.com/josusanmartin/basis-lab" rel="noreferrer" target="_blank">GitHub</a>
+    </div>
+  </header>
+
+  <main>
+    <section class="intro">
+      <div>
+        <p class="eyebrow">CROSS-VENUE RESEARCH</p>
+        <h1>See the dislocation.<br><em>Trade the convergence.</em></h1>
+      </div>
+      <p class="intro-copy">Historical premium and discount candles from venue OHLC—normalized, aligned, and measured in basis points.</p>
+    </section>
+
+    <section class="terminal" aria-label="Comparison chart">
+      <div class="pair-builder">
+        <div class="leg" data-side="left">
+          <div class="leg-heading"><span class="leg-index">A</span><span>Numerator · long when discounted</span></div>
+          <div class="leg-inputs">
+            <label><span>Venue</span><select id="left-venue" aria-label="Left venue"></select></label>
+            <label class="market-field"><span>Market</span><input id="left-market" list="left-markets" autocomplete="off" spellcheck="false" aria-label="Left market"><datalist id="left-markets"></datalist></label>
+          </div>
+        </div>
+        <button id="swap" class="swap" type="button" title="Swap legs" aria-label="Swap comparison legs">⇄</button>
+        <div class="operator" aria-hidden="true"><span>÷</span></div>
+        <div class="leg" data-side="right">
+          <div class="leg-heading"><span class="leg-index">B</span><span>Denominator · short when discounted</span></div>
+          <div class="leg-inputs">
+            <label><span>Venue</span><select id="right-venue" aria-label="Right venue"></select></label>
+            <label class="market-field"><span>Market</span><input id="right-market" list="right-markets" autocomplete="off" spellcheck="false" aria-label="Right market"><datalist id="right-markets"></datalist></label>
+          </div>
+        </div>
+        <button id="run" class="run-button" type="button"><span>Run comparison</span><kbd>↵</kbd></button>
+      </div>
+
+      <div class="toolbar">
+        <div id="intervals" class="segmented" aria-label="Candle interval"></div>
+        <div id="ranges" class="segmented range-tabs" aria-label="Time range">
+          <button data-range="1">24H</button><button data-range="7" class="active">7D</button><button data-range="30">30D</button><button data-range="90">90D</button>
+        </div>
+        <div class="formula" id="formula">(A ÷ B − 1) × 10,000</div>
+        <button id="copy-api" class="icon-button" type="button" title="Copy this API request"><span>API</span> ⧉</button>
+      </div>
+
+      <div class="metrics" aria-live="polite">
+        <article><p>Current spread</p><strong id="metric-latest">—</strong><small id="metric-direction">basis points</small></article>
+        <article><p>Period mean</p><strong id="metric-mean">—</strong><small>close average</small></article>
+        <article><p>Volatility</p><strong id="metric-sigma">—</strong><small>1σ dispersion</small></article>
+        <article><p>Z-score</p><strong id="metric-z">—</strong><small id="metric-signal">waiting for data</small></article>
+        <article><p>Observed range</p><strong id="metric-range">—</strong><small>low → high</small></article>
+      </div>
+
+      <div class="workspace">
+        <section class="chart-section">
+          <div class="chart-heading">
+            <div>
+              <div class="chart-title"><span class="pulse-dot"></span><strong id="chart-pair">Waiting for markets</strong><span>· PREMIUM / DISCOUNT</span></div>
+              <p id="chart-subtitle">Select two venues and run a comparison</p>
+            </div>
+            <div class="legend"><span><i class="up"></i>Premium rising</span><span><i class="down"></i>Premium falling</span><span><i class="mean"></i>Mean</span></div>
+          </div>
+          <div id="chart-wrap" class="chart-wrap">
+            <canvas id="chart" role="img" aria-label="Premium discount candlestick chart"></canvas>
+            <div id="chart-tooltip" class="chart-tooltip" hidden></div>
+            <div id="chart-loading" class="chart-loading"><span class="loader"></span><p>Aligning venue candles…</p></div>
+            <div id="chart-empty" class="chart-empty" hidden><strong>No aligned candles</strong><p>Try a wider interval or confirm both symbols trade on the selected venues.</p></div>
+          </div>
+          <p class="chart-hint">Drag to pan · Scroll to zoom · Double-click to reset</p>
+        </section>
+
+        <aside class="strategy-panel">
+          <div class="panel-title"><div><p class="eyebrow">MEAN REVERSION MAP</p><h2>Entry & exit bands</h2></div><button id="reset-bands" class="text-button">Reset</button></div>
+          <label class="slider-label"><span>Entry distance <output id="entry-z-label">2.0σ</output></span><input id="entry-z" type="range" min="0.5" max="4" step="0.25" value="2"></label>
+          <label class="slider-label"><span>Exit distance <output id="exit-z-label">0.25σ</output></span><input id="exit-z" type="range" min="0" max="2" step="0.25" value="0.25"></label>
+          <div class="signal-card short">
+            <span class="signal-icon">↘</span><div><small>UPPER ENTRY</small><strong id="upper-entry">—</strong><p>Short A · Long B</p></div>
+          </div>
+          <div class="signal-card neutral">
+            <span class="signal-icon">◎</span><div><small>EXIT WINDOW</small><strong id="exit-window">—</strong><p>Close toward the mean</p></div>
+          </div>
+          <div class="signal-card long">
+            <span class="signal-icon">↗</span><div><small>LOWER ENTRY</small><strong id="lower-entry">—</strong><p>Long A · Short B</p></div>
+          </div>
+          <div class="strategy-note"><span>!</span><p><strong>Research signal, not executable P&amp;L.</strong> Fees, funding, borrow, slippage, latency, and fill risk are not included.</p></div>
+        </aside>
+      </div>
+    </section>
+
+    <section class="observations">
+      <div class="section-heading"><div><p class="eyebrow">LATEST BARS</p><h2>Recent observations</h2></div><p id="alignment-note">Awaiting comparison</p></div>
+      <div class="table-wrap">
+        <table><thead><tr><th>UTC time</th><th>Spread close</th><th>Range</th><th>Venue A close</th><th>Venue B close</th><th>Signal</th></tr></thead><tbody id="observations-body"><tr><td colspan="6" class="table-empty">No observations yet</td></tr></tbody></table>
+      </div>
+    </section>
+
+    <section class="method">
+      <div><p class="eyebrow">METHODOLOGY</p><h2>Fast by construction.<br>Honest about the approximation.</h2></div>
+      <div class="method-copy">
+        <p>Basis Lab requests venue OHLC bars—not trades—and joins only equal opening timestamps. The close is an exact same-field ratio. Intrabar high and low form a conservative envelope from opposing source extremes, which may not have happened simultaneously.</p>
+        <a href="/docs">Read the API contract →</a>
+      </div>
+      <div class="venue-strip"><span>BINANCE</span><span>BYBIT</span><span>HYPERLIQUID</span><span>LIGHTER</span><span>ASTER</span><span>ONDO</span><span>MEXC</span><span>OKX</span></div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <footer><span>Basis Lab</span><p>Market structure research, without the noise.</p><span id="version">v0.1.0</span></footer>
+  <script src="/app.js" defer></script>
+</body>
+</html>
+

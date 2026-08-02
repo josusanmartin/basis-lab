@@ -1,0 +1,7 @@
+target
+.git
+.github
+node_modules
+playwright-report
+test-results
+
