@@ -44,21 +44,26 @@ impl MarketDataService {
     }
 
     pub async fn candles(&self, request: CandleRequest) -> Result<Arc<Vec<Candle>>, AppError> {
-        if let Some(cached) = self.candle_cache.get(&request).await {
-            return Ok(cached);
-        }
-        let candles = Arc::new(adapters::fetch_candles(&self.client, &request).await?);
-        self.candle_cache.insert(request, candles.clone()).await;
-        Ok(candles)
+        let client = self.client.clone();
+        let fetch_request = request.clone();
+        self.candle_cache
+            .try_get_with(request, async move {
+                adapters::fetch_candles(&client, &fetch_request)
+                    .await
+                    .map(Arc::new)
+            })
+            .await
+            .map_err(|error| error.as_ref().clone())
     }
 
     pub async fn markets(&self, venue: Venue) -> Result<Arc<Vec<Market>>, AppError> {
-        if let Some(cached) = self.market_cache.get(&venue).await {
-            return Ok(cached);
-        }
-        let markets = Arc::new(adapters::fetch_markets(&self.client, venue).await?);
-        self.market_cache.insert(venue, markets.clone()).await;
-        Ok(markets)
+        let client = self.client.clone();
+        self.market_cache
+            .try_get_with(venue, async move {
+                adapters::fetch_markets(&client, venue).await.map(Arc::new)
+            })
+            .await
+            .map_err(|error| error.as_ref().clone())
     }
 
     pub async fn compare(
