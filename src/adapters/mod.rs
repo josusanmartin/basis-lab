@@ -245,8 +245,7 @@ async fn binance_markets(
 
 fn infer_pair(symbol: &str) -> (String, String) {
     const QUOTES: [&str; 12] = [
-        "FDUSD", "USDT", "USDC", "TUSD", "BUSD", "USDP", "DAI", "BTC", "ETH", "BNB", "EUR",
-        "TRY",
+        "FDUSD", "USDT", "USDC", "TUSD", "BUSD", "USDP", "DAI", "BTC", "ETH", "BNB", "EUR", "TRY",
     ];
     for quote in QUOTES {
         if let Some(base) = symbol.strip_suffix(quote)
