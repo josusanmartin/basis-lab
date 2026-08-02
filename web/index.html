@@ -6,17 +6,17 @@
   <meta name="theme-color" content="#080a0e">
   <meta name="description" content="Compare premium and discount candles across crypto spot and perpetual venues.">
   <title>Basis Lab — Cross-venue premium explorer</title>
-  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
   <header class="site-header">
-    <a class="brand" href="/" aria-label="Basis Lab home">
+    <a class="brand" href="./" aria-label="Basis Lab home">
       <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
       <span>Basis Lab</span>
     </a>
     <div class="header-meta">
       <span class="service-state"><i id="health-dot"></i><span id="health-label">Connecting</span></span>
-      <a href="/docs">API</a>
+      <a href="./docs.html">API</a>
       <a href="https://github.com/josusanmartin/basis-lab" rel="noreferrer" target="_blank">GitHub</a>
     </div>
   </header>
@@ -115,7 +115,7 @@
       <div><p class="eyebrow">METHODOLOGY</p><h2>Fast by construction.<br>Honest about the approximation.</h2></div>
       <div class="method-copy">
         <p>Basis Lab requests venue OHLC bars—not trades—and joins only equal opening timestamps. The close is an exact same-field ratio. Intrabar high and low form a conservative envelope from opposing source extremes, which may not have happened simultaneously.</p>
-        <a href="/docs">Read the API contract →</a>
+        <a href="./docs.html">Read the API contract →</a>
       </div>
       <div class="venue-strip"><span>BINANCE</span><span>BYBIT</span><span>HYPERLIQUID</span><span>LIGHTER</span><span>ASTER</span><span>ONDO</span><span>MEXC</span><span>OKX</span></div>
     </section>
@@ -123,7 +123,6 @@
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <footer><span>Basis Lab</span><p>Market structure research, without the noise.</p><span id="version">v0.1.0</span></footer>
-  <script src="/app.js" defer></script>
+  <script src="./app.js" defer></script>
 </body>
 </html>
-

@@ -10,6 +10,12 @@ without downloading trades. A Rust service fetches venue candles concurrently, n
 
 > Research tooling only. A visible spread is not executable profit. Fees, funding, borrow, slippage, latency, transfer constraints, and fill risk are not modeled.
 
+## Hosted preview
+
+The responsive public preview is published at <https://josusanmartin.github.io/basis-lab/>. GitHub Pages has no server runtime, so that URL labels and uses illustrative local candles by default. To connect it to a deployed Rust API, append `?api_base=https://your-api.example`; the same UI then uses live venue data and exposes copyable API requests.
+
+For the complete UI and agent-callable API on one origin, deploy the included `render.yaml`, `fly.toml`, Dockerfile, or Compose service.
+
 ## Venue coverage
 
 | Adapter | Market |
@@ -89,7 +95,7 @@ npx playwright install chromium
 npm run test:e2e
 ```
 
-The E2E suite boots the Rust binary, loads the live Bybit/MEXC WLFI comparison, validates chart and analytics output, swaps legs, changes intervals, checks the API documentation, and repeats core checks at a mobile viewport. Because venue adapters call external APIs, the live adapter smoke test is intentionally separate from deterministic unit and browser tests.
+The deterministic E2E suite boots the Rust binary, loads a Bybit/MEXC WLFI fixture through the UI, validates chart and analytics output, swaps legs, changes intervals, checks the API documentation and static-preview fallback, and repeats core checks at a mobile viewport. Because venue adapters call external APIs, the 12-adapter live smoke matrix is intentionally separate from deterministic unit and browser tests.
 
 ## Production notes
 
@@ -104,4 +110,3 @@ The E2E suite boots the Rust binary, loads the live Bybit/MEXC WLFI comparison, 
 ## License
 
 MIT
-

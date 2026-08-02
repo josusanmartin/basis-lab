@@ -19,6 +19,9 @@
   ].map(([id,label]) => ({id,label,intervals:['1m','5m','15m','30m','1h','4h','1d']}));
   const defaultSymbols = {hyperliquid_perp:'BTC',lighter_perp:'BTC',ondo_perp:'BTC-USD.P',mexc_perp:'BTC_USDT',okx_spot:'BTC-USDT',okx_perp:'BTC-USDT-SWAP'};
   const allIntervals = ['1m','3m','5m','15m','30m','1h','2h','4h','1d'];
+  const configuredApiBase = new URLSearchParams(location.search).get('api_base');
+  const staticPreview = (location.hostname.endsWith('.github.io') || new URLSearchParams(location.search).get('static_demo')==='1') && !configuredApiBase;
+  const apiBase = configuredApiBase ? configuredApiBase.replace(/\/$/,'') : location.origin;
   const state = {venues:fallbackVenues,interval:'1h',range:7,data:null,requestUrl:'',abort:null,visible:160,offset:0,hover:-1,drag:null,refreshTimer:null};
   const metrics = {latest:$('#metric-latest'),mean:$('#metric-mean'),sigma:$('#metric-sigma'),z:$('#metric-z'),range:$('#metric-range'),direction:$('#metric-direction'),signal:$('#metric-signal')};
 
@@ -38,8 +41,8 @@
     if (refs.intervals.querySelector('.active:disabled')) {state.interval=[...refs.intervals.children].find(b=>!b.disabled)?.dataset.interval||'1h';renderIntervals()}
   }
   async function bootstrap(){
-    try {const response=await fetch('/api/v1/venues',{headers:{Accept:'application/json'}});if(!response.ok)throw new Error();state.venues=(await response.json()).data;refs.healthDot.className='online';refs.healthLabel.textContent='Live'}
-    catch {refs.healthDot.className='error';refs.healthLabel.textContent='API offline'}
+    try {if(staticPreview)throw new Error();const response=await fetch(`${apiBase}/api/v1/venues`,{headers:{Accept:'application/json'}});if(!response.ok)throw new Error();state.venues=(await response.json()).data;refs.healthDot.className='online';refs.healthLabel.textContent='Live'}
+    catch {refs.healthDot.className=staticPreview?'preview':'error';refs.healthLabel.textContent=staticPreview?'Static demo':'API offline'}
     populateVenues(); bind(); loadMarkets('left');loadMarkets('right');await compare();
     state.refreshTimer=setInterval(()=>{if(!document.hidden)compare(true)},30000);
   }
@@ -58,20 +61,22 @@
     window.addEventListener('beforeunload',()=>{state.abort?.abort();clearInterval(state.refreshTimer)},{once:true});
   }
   async function loadMarkets(side){
+    if(staticPreview)return;
     const select=side==='left'?refs.leftVenue:refs.rightVenue,input=side==='left'?refs.leftMarket:refs.rightMarket,list=side==='left'?refs.leftMarkets:refs.rightMarkets;
-    try {const q=new URLSearchParams({venue:select.value,query:input.value.replace(/[_-]?(USDT|USD|SWAP|P)$/i,''),limit:'100'});const response=await fetch(`/api/v1/markets?${q}`);if(!response.ok)return;const data=(await response.json()).data;list.replaceChildren(...data.map(m=>option(m.symbol,m.symbol)))} catch {}
+    try {const q=new URLSearchParams({venue:select.value,query:input.value.replace(/[_-]?(USDT|USD|SWAP|P)$/i,''),limit:'100'});const response=await fetch(`${apiBase}/api/v1/markets?${q}`);if(!response.ok)return;const data=(await response.json()).data;list.replaceChildren(...data.map(m=>option(m.symbol,m.symbol)))} catch {}
   }
   function limits(){
     const end=Date.now(),start=end-state.range*864e5;
     const intervalMs={ '1m':6e4,'3m':18e4,'5m':3e5,'15m':9e5,'30m':18e5,'1h':36e5,'2h':72e5,'4h':144e5,'1d':864e5}[state.interval];
     return {from:start,to:end,limit:Math.min(1500,Math.ceil((end-start)/intervalMs)+4)};
   }
-  function makeUrl(){const window=limits();return `${location.origin}/api/v1/compare?${new URLSearchParams({left_venue:refs.leftVenue.value,left_market:refs.leftMarket.value.trim().toUpperCase(),right_venue:refs.rightVenue.value,right_market:refs.rightMarket.value.trim().toUpperCase(),interval:state.interval,from:String(window.from),to:String(window.to),limit:String(window.limit),scale:'10000'})}`}
+  function makeUrl(){const window=limits();return `${apiBase}/api/v1/compare?${new URLSearchParams({left_venue:refs.leftVenue.value,left_market:refs.leftMarket.value.trim().toUpperCase(),right_venue:refs.rightVenue.value,right_market:refs.rightMarket.value.trim().toUpperCase(),interval:state.interval,from:String(window.from),to:String(window.to),limit:String(window.limit),scale:'10000'})}`}
   async function compare(silent=false){
     if(!refs.leftMarket.value.trim()||!refs.rightMarket.value.trim())return toast('Choose both markets');
     state.abort?.abort();state.abort=new AbortController();state.requestUrl=makeUrl();
     refs.run.disabled=true;if(!silent){refs.loading.hidden=false;refs.empty.hidden=true}
     try {
+      if(staticPreview){state.data=previewData();state.visible=Math.min(state.data.candles.length,Math.max(80,Math.round(refs.wrap.clientWidth/7)));state.offset=0;state.hover=-1;updateUrl();renderData();refs.healthDot.className='preview';refs.healthLabel.textContent='Static demo';return}
       const response=await fetch(state.requestUrl,{signal:state.abort.signal,headers:{Accept:'application/json'}});const body=await response.json().catch(()=>({}));
       if(!response.ok)throw new Error(body.error?.message||`Request failed (${response.status})`);
       state.data=body;state.visible=Math.min(body.candles.length,Math.max(80,Math.round(refs.wrap.clientWidth/7)));state.offset=0;state.hover=-1;
@@ -79,7 +84,12 @@
     } catch(error) {if(error.name==='AbortError')return;refs.empty.hidden=false;refs.empty.querySelector('strong').textContent='Comparison unavailable';refs.empty.querySelector('p').textContent=error.message;refs.healthDot.className='error';refs.healthLabel.textContent='Data error';toast(error.message)}
     finally {refs.loading.hidden=true;refs.run.disabled=false}
   }
-  function updateUrl(){const params=new URLSearchParams({left_venue:refs.leftVenue.value,left_market:refs.leftMarket.value.toUpperCase(),right_venue:refs.rightVenue.value,right_market:refs.rightMarket.value.toUpperCase(),interval:state.interval,range:String(state.range)});history.replaceState(null,'',`${location.pathname}?${params}`)}
+  function updateUrl(){const params=new URLSearchParams({left_venue:refs.leftVenue.value,left_market:refs.leftMarket.value.toUpperCase(),right_venue:refs.rightVenue.value,right_market:refs.rightMarket.value.toUpperCase(),interval:state.interval,range:String(state.range)});if(configuredApiBase)params.set('api_base',configuredApiBase);history.replaceState(null,'',`${location.pathname}?${params}`)}
+  function previewData(){
+    const {from,to,limit}=limits(),step={'1m':6e4,'3m':18e4,'5m':3e5,'15m':9e5,'30m':18e5,'1h':36e5,'2h':72e5,'4h':144e5,'1d':864e5}[state.interval],count=Math.min(limit,220),seed=[...`${refs.leftVenue.value}:${refs.leftMarket.value}:${refs.rightVenue.value}:${refs.rightMarket.value}`].reduce((sum,char)=>sum+char.charCodeAt(0),0),end=Math.floor(to/step)*step;
+    const candles=Array.from({length:count},(_,index)=>{const time=Math.max(from,end-(count-1-index)*step),center=Math.sin((index+seed)/11)*18+Math.cos((index+seed)/29)*7,open=center+Math.sin(index*.73)*3,close=center+Math.cos(index*.51)*3.2,leftClose=1+seed/10000+index/100000;return {time,open,high:Math.max(open,close)+4.4,low:Math.min(open,close)-4.4,close,left_close:leftClose,right_close:leftClose/(1+close/10000)}}),closes=candles.map(c=>c.close),mean=closes.reduce((a,b)=>a+b,0)/closes.length,variance=closes.reduce((sum,value)=>sum+(value-mean)**2,0)/closes.length,standard_deviation=Math.sqrt(variance),latest=closes.at(-1);
+    return {interval:state.interval,unit:'basis points · illustrative static data',matched_candles:count,dropped_left:0,dropped_right:0,candles,stats:{latest,mean,standard_deviation,minimum:Math.min(...closes),maximum:Math.max(...closes),z_score:(latest-mean)/standard_deviation}}
+  }
   function renderData(){
     const data=state.data,stats=data.stats,left=refs.leftMarket.value.toUpperCase(),right=refs.rightMarket.value.toUpperCase();
     refs.formula.textContent=`(${venue(refs.leftVenue.value).label}:${left} ÷ ${venue(refs.rightVenue.value).label}:${right} − 1) × 10,000`;

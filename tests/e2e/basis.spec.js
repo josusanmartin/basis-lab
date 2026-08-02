@@ -115,4 +115,12 @@ test.describe('Basis Lab browser workflow', () => {
     await expect(page.getByRole('heading', { name: 'Basis Lab API' })).toBeVisible();
     await expect(page.locator('main')).toContainText('Comparison semantics');
   });
+
+  test('keeps the public static preview interactive without an API host', async ({ page }) => {
+    await page.goto('/?static_demo=1');
+    await expect(page.locator('#health-label')).toHaveText('Static demo');
+    await expect(page.locator('#chart-pair')).toHaveText('WLFIUSDT / WLFI_USDT');
+    await expect(page.locator('#chart-subtitle')).toContainText('illustrative static data');
+    await expect(page.locator('#observations-body tr')).toHaveCount(12);
+  });
 });
