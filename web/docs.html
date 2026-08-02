@@ -24,7 +24,7 @@
   <h2>Operational limits</h2>
   <p>Maximum 1,500 returned candles, 366-day range, 20,000 source intervals, bounded 15-second cache, 12 MiB upstream response cap, and a two-second concurrency queue. Upstream exchange limits can be lower.</p>
 </main><script>
-const now=Date.now(),from=now-7*864e5,isPages=location.hostname.endsWith('.github.io'),o=isPages?'http://localhost:8080':location.origin;
+const now=Date.now(),from=now-7*864e5,isPages=location.hostname.endsWith('.github.io')||location.pathname.startsWith('/basis-lab/'),o=isPages?'http://localhost:8080':location.origin;
 document.querySelector('#hosting-note').hidden=!isPages;
 document.querySelectorAll('.origin').forEach(x=>x.textContent=o);
 document.querySelector('#candles').textContent=`curl '${o}/api/v1/candles?venue=bybit_perp&market=BTCUSDT&interval=1h&from=${from}&to=${now}&limit=168'`;

@@ -20,7 +20,7 @@
   const defaultSymbols = {hyperliquid_perp:'BTC',lighter_perp:'BTC',ondo_perp:'BTC-USD.P',mexc_perp:'BTC_USDT',okx_spot:'BTC-USDT',okx_perp:'BTC-USDT-SWAP'};
   const allIntervals = ['1m','3m','5m','15m','30m','1h','2h','4h','1d'];
   const configuredApiBase = new URLSearchParams(location.search).get('api_base');
-  const staticPreview = (location.hostname.endsWith('.github.io') || new URLSearchParams(location.search).get('static_demo')==='1') && !configuredApiBase;
+  const staticPreview = (location.hostname.endsWith('.github.io') || location.pathname.startsWith('/basis-lab/') || new URLSearchParams(location.search).get('static_demo')==='1') && !configuredApiBase;
   const apiBase = configuredApiBase ? configuredApiBase.replace(/\/$/,'') : location.origin;
   const state = {venues:fallbackVenues,interval:'1h',range:7,data:null,requestUrl:'',abort:null,visible:160,offset:0,hover:-1,drag:null,refreshTimer:null};
   const metrics = {latest:$('#metric-latest'),mean:$('#metric-mean'),sigma:$('#metric-sigma'),z:$('#metric-z'),range:$('#metric-range'),direction:$('#metric-direction'),signal:$('#metric-signal')};

@@ -12,7 +12,7 @@ without downloading trades. A Rust service fetches venue candles concurrently, n
 
 ## Hosted preview
 
-The responsive public preview is published at <https://josusanmartin.github.io/basis-lab/>. GitHub Pages has no server runtime, so that URL labels and uses illustrative local candles by default. To connect it to a deployed Rust API, append `?api_base=https://your-api.example`; the same UI then uses live venue data and exposes copyable API requests.
+The responsive public preview is published at <https://josusanmartin.com/basis-lab/>. GitHub Pages has no server runtime, so that URL labels and uses illustrative local candles by default. To connect it to a deployed Rust API, append `?api_base=https://your-api.example`; the same UI then uses live venue data and exposes copyable API requests.
 
 For the complete UI and agent-callable API on one origin, deploy the included `render.yaml`, `fly.toml`, Dockerfile, or Compose service.
 
