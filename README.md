@@ -51,6 +51,12 @@ Or use Docker:
 docker compose up --build
 ```
 
+Or run the signed release image published from `main`:
+
+```bash
+docker run --rm -p 8080:8080 ghcr.io/josusanmartin/basis-lab:latest
+```
+
 ## API
 
 Interactive examples are at `/docs`; the machine-readable contract is `/openapi.json`.
@@ -105,6 +111,7 @@ The deterministic E2E suite boots the Rust binary, loads a Bybit/MEXC WLFI fixtu
 - In-flight requests are canceled by the UI when superseded; refresh pauses in background tabs.
 - The chart caps device pixel ratio at 2 to avoid oversized backing buffers on dense displays.
 - `Dockerfile` uses an unprivileged runtime user and a stripped, LTO release binary.
+- Every `main` build publishes multi-attested OCI tags (`latest`, full commit SHA) to GitHub Container Registry with an SBOM and build provenance.
 - `render.yaml` and `fly.toml` are included as deployment options.
 
 ## License
