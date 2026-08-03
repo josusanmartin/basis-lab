@@ -319,9 +319,18 @@ test.describe('Basis Lab browser workflow', () => {
     await expect(page.locator('#metric-latest')).not.toHaveText('—');
 
     const follow = page.locator('#follow-live');
+    await expect(page.locator('#live-tape')).toBeHidden();
     await follow.click();
     await expect(follow).toHaveText('Stop live');
     await expect(follow).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('#live-tape')).toBeVisible();
+    await expect(page.locator('#live-tape-title')).toHaveText('Markets aligned in real time');
+    await expect(page.locator('#live-a-status')).toHaveText('STREAMING');
+    await expect(page.locator('#live-b-status')).toHaveText('STREAMING');
+    await expect(page.locator('#live-a-price')).toContainText('7,539');
+    await expect(page.locator('#live-b-price')).toContainText('7,538');
+    await expect(page.locator('#live-spread-value')).toContainText('bp');
+    await expect(page.locator('#live-tape-events .live-event')).toHaveCount(3);
     await expect(page.locator('#chart-subtitle')).toContainText('LIVE · WebSocket aligned');
     await expect(page.locator('#chart-subtitle')).toContainText('B mark-derived');
     await expect(page.locator('#health-label')).toHaveText('Following live');
@@ -333,6 +342,7 @@ test.describe('Basis Lab browser workflow', () => {
     await follow.click();
     await expect(follow).toHaveText('Follow live');
     await expect(follow).toHaveAttribute('aria-pressed', 'false');
+    await expect(page.locator('#live-tape')).toBeHidden();
     await expect(page.locator('#chart-subtitle')).not.toContainText('LIVE');
   });
 

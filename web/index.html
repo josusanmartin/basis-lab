@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#080a0e">
   <meta name="description" content="Compare premium and discount candles across crypto spot and perpetual venues.">
   <title>Basis Lab — Cross-venue premium explorer</title>
-  <link rel="stylesheet" href="./styles.css?v=0.2.0">
+  <link rel="stylesheet" href="./styles.css?v=0.4.0">
 </head>
 <body>
   <header class="site-header">
@@ -60,6 +60,36 @@
         <button id="follow-live" class="live-button" type="button" aria-pressed="false"><i aria-hidden="true"></i><span>Follow live</span></button>
         <button id="copy-api" class="icon-button" type="button" title="Copy this API request"><span>API</span> ⧉</button>
       </div>
+
+      <section id="live-tape" class="live-tape" aria-label="Live market feed" hidden>
+        <div class="live-tape-heading">
+          <div>
+            <p><i aria-hidden="true"></i> LIVE MARKET FEED</p>
+            <h2 id="live-tape-title">Connecting to both venues</h2>
+          </div>
+          <time id="live-tape-clock">--:--:-- UTC</time>
+        </div>
+        <div class="live-tape-grid">
+          <article id="live-tape-a" class="live-quote" data-side="left">
+            <div class="live-quote-heading"><span class="live-leg">A</span><span id="live-a-status" class="live-feed-status">CONNECTING</span></div>
+            <p><strong id="live-a-venue">Venue A</strong><span id="live-a-market">Market A</span></p>
+            <div><strong id="live-a-price">—</strong><small id="live-a-detail">Awaiting first update</small></div>
+          </article>
+          <article id="live-tape-spread" class="live-spread">
+            <p>ALIGNED BASIS</p>
+            <strong id="live-spread-value">—</strong>
+            <small id="live-spread-detail">Waiting for the same UTC candle</small>
+          </article>
+          <article id="live-tape-b" class="live-quote" data-side="right">
+            <div class="live-quote-heading"><span class="live-leg">B</span><span id="live-b-status" class="live-feed-status">CONNECTING</span></div>
+            <p><strong id="live-b-venue">Venue B</strong><span id="live-b-market">Market B</span></p>
+            <div><strong id="live-b-price">—</strong><small id="live-b-detail">Awaiting first update</small></div>
+          </article>
+        </div>
+        <ol id="live-tape-events" class="live-tape-events" aria-label="Recent live feed updates" aria-live="polite">
+          <li class="live-event-empty">Updates will appear here as the venue feeds arrive.</li>
+        </ol>
+      </section>
 
       <div class="metrics" aria-live="polite">
         <article><p>Current spread</p><strong id="metric-latest">—</strong><small id="metric-direction">basis points</small></article>
@@ -123,8 +153,8 @@
   </main>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <footer><span>Basis Lab</span><p>Market structure research, without the noise.</p><span id="version">v0.3.0</span></footer>
+  <footer><span>Basis Lab</span><p>Market structure research, without the noise.</p><span id="version">v0.4.0</span></footer>
   <script src="./live-feeds.js?v=0.3.0" defer></script>
-  <script src="./app.js?v=0.3.0" defer></script>
+  <script src="./app.js?v=0.4.0" defer></script>
 </body>
 </html>
