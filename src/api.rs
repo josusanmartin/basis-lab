@@ -726,6 +726,18 @@ mod tests {
             quote: "USD".into(),
             active: true,
         };
+        let hip3_sp500 = Market {
+            symbol: "xyz:SP500".into(),
+            base: "SP500".into(),
+            quote: "USD".into(),
+            active: true,
+        };
+        let ondo_us500 = Market {
+            symbol: "US500-USD.P".into(),
+            base: "US500".into(),
+            quote: "USD".into(),
+            active: true,
+        };
 
         assert!(ensure_comparable_markets(&[spx], "SPX", &[spcx], "SPCX-USD.P").is_err());
         assert!(
@@ -736,6 +748,10 @@ mod tests {
         let (resolved_left, _) =
             ensure_comparable_markets(&left, "XYZ:SPCX", &right, "SPCX-USD.P").unwrap();
         assert_eq!(resolved_left.symbol, "xyz:SPCX");
+        assert!(
+            ensure_comparable_markets(&[hip3_sp500], "xyz:SP500", &[ondo_us500], "US500-USD.P")
+                .is_ok()
+        );
     }
 
     #[test]
@@ -749,10 +765,15 @@ mod tests {
             Some((1, 0.98, "known ticker alias", false))
         );
         assert_eq!(
+            equivalence_match("US500", "SP500"),
+            Some((1, 0.98, "known ticker alias", false))
+        );
+        assert_eq!(
             equivalence_match("1000PEPE", "PEPE"),
             Some((2, 0.7, "possible contract-size alias", true))
         );
         assert_eq!(equivalence_match("SPX", "SPCX"), None);
+        assert_eq!(equivalence_match("SPX", "SP500"), None);
     }
 
     #[test]

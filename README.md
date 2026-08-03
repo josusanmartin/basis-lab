@@ -92,7 +92,7 @@ high  = (A.high  / B.low   - 1) × scale
 low   = (A.low   / B.high  - 1) × scale
 ```
 
-With `scale=10000`, values are basis points. Comparisons require matching canonical base assets; the suggestion endpoint ranks equivalent native symbols and flags contract-size aliases that need multiplier review. The high/low calculation is a conservative OHLC envelope, not a claim that venue extremes happened simultaneously. Deriving exact synthetic extremes would require synchronized trades or finer-grained bars. Only candles with identical normalized opening timestamps are joined; dropped counts are included in each response.
+With `scale=10000`, values are basis points. Comparisons require matching canonical base assets; the suggestion endpoint ranks equivalent native symbols (including both the exact Hyperliquid `mkts:US500` match and the `xyz:SP500` index alias for Ondo `US500`) and flags contract-size aliases that need multiplier review. `SPX` remains distinct because it is not an S&P 500 index market on Hyperliquid. The high/low calculation is a conservative OHLC envelope, not a claim that venue extremes happened simultaneously. Deriving exact synthetic extremes would require synchronized trades or finer-grained bars. Only candles with identical normalized opening timestamps are joined; dropped counts are included in each response.
 
 ## Verification
 

@@ -49,6 +49,18 @@ test.describe('deployed live Rust service', () => {
     expect(suggestionBody.data[0].symbol).toBe('xyz:SPCX');
     expect(suggestionBody.data[0].confidence).toBe(1);
 
+    const sp500 = await request.get(new URL('/api/v1/markets?venue=hyperliquid_perp&query=SP500&limit=100', liveApiBaseUrl).href);
+    expect(sp500.ok()).toBeTruthy();
+    expect((await sp500.json()).data.some(market => market.symbol === 'xyz:SP500')).toBeTruthy();
+
+    const indexSuggestions = await request.get(new URL('/api/v1/tickers/suggest?source_venue=ondo_perp&source_symbol=US500-USD.P&target_venue=hyperliquid_perp', liveApiBaseUrl).href);
+    expect(indexSuggestions.ok()).toBeTruthy();
+    const indexSuggestionBody = await indexSuggestions.json();
+    expect(indexSuggestionBody.data[0].symbol).toBe('mkts:US500');
+    const xyzSp500Suggestion = indexSuggestionBody.data.find(suggestion => suggestion.symbol === 'xyz:SP500');
+    expect(xyzSp500Suggestion.confidence).toBe(0.98);
+    expect(xyzSp500Suggestion.match_reason).toBe('known ticker alias');
+
     const spec = await request.get(new URL('/openapi.json', liveApiBaseUrl).href);
     const contract = await spec.json();
     expect(contract.components.schemas.ComparisonResponse.required).toContain('candles');

@@ -90,7 +90,7 @@
       "get": {
         "operationId": "suggestEquivalentTickers",
         "summary": "Suggest equivalent native symbols on another venue",
-        "description": "Ranks exact normalized-base matches first, followed by known aliases and clearly flagged contract-size candidates. Hyperliquid results include dynamically discovered HIP-3 markets such as xyz:SPCX.",
+        "description": "Ranks exact normalized-base matches first, followed by known aliases and clearly flagged contract-size candidates. Hyperliquid results include dynamically discovered HIP-3 markets such as xyz:SPCX and index aliases such as Ondo US500 to Hyperliquid xyz:SP500.",
         "tags": ["Market data"],
         "parameters": [
           { "name": "source_venue", "in": "query", "required": true, "schema": { "$ref": "#/components/schemas/Venue" } },

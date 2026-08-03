@@ -103,6 +103,7 @@ test.describe('Basis Lab browser workflow', () => {
 
     await page.goto('/');
     await expect(page).toHaveTitle(/Basis Lab/);
+    await expect(page.locator('.intro')).toHaveCount(0);
     await expect(page.locator('#health-label')).toHaveText('Live');
     await expect(page.locator('#chart-pair')).toHaveText('WLFIUSDT / WLFI_USDT');
     await expect(page.locator('#metric-latest')).not.toHaveText('—');

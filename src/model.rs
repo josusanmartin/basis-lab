@@ -261,6 +261,7 @@ pub fn canonical_asset(value: &str) -> String {
         "XBT" | "WBTC" => "BTC".into(),
         "WETH" => "ETH".into(),
         "XDG" => "DOGE".into(),
+        "US500" | "USA500" | "SPX500" => "SP500".into(),
         _ => compact,
     }
 }
@@ -351,6 +352,10 @@ mod tests {
         assert_eq!(compact_ticker(" btc-usdt.swap "), "BTCUSDTSWAP");
         assert_eq!(canonical_asset("xbt"), "BTC");
         assert_eq!(canonical_asset("WETH"), "ETH");
+        assert_eq!(canonical_asset("US500"), "SP500");
+        assert_eq!(canonical_asset("USA500"), "SP500");
+        assert_eq!(canonical_asset("SPX500"), "SP500");
+        assert_eq!(canonical_asset("SPX"), "SPX");
         assert_eq!(contract_unit_asset("1000PEPE").as_deref(), Some("PEPE"));
         assert_eq!(contract_unit_asset("1INCH"), None);
     }
