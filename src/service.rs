@@ -13,6 +13,7 @@ use crate::{
     },
 };
 
+pub const BASIS_POINT_SCALE: f64 = 10_000.0;
 pub const TICKER_CACHE_TTL_SECONDS: u64 = 300;
 
 #[derive(Clone)]
@@ -195,7 +196,7 @@ pub fn compare_candles(
             right_request.market,
             scale
         ),
-        unit: if (scale - 10_000.0).abs() < f64::EPSILON {
+        unit: if (scale - BASIS_POINT_SCALE).abs() < f64::EPSILON {
             "bps"
         } else {
             "scaled ratio delta"
@@ -294,14 +295,25 @@ mod tests {
             &request(Venue::MexcPerp),
             &left,
             &right,
-            10_000.0,
+            BASIS_POINT_SCALE,
         )
         .unwrap();
         assert_eq!(result.candles.len(), 1);
         assert_relative_eq!(result.candles[0].open, 200.0, epsilon = 1e-9);
-        assert_relative_eq!(result.candles[0].close, (104.0 / 102.0 - 1.0) * 10_000.0);
-        assert_relative_eq!(result.candles[0].high, (106.0 / 98.0 - 1.0) * 10_000.0);
-        assert_relative_eq!(result.candles[0].low, (100.0 / 104.0 - 1.0) * 10_000.0);
+        assert_relative_eq!(
+            result.candles[0].close,
+            (104.0 / 102.0 - 1.0) * BASIS_POINT_SCALE
+        );
+        assert_relative_eq!(
+            result.candles[0].high,
+            (106.0 / 98.0 - 1.0) * BASIS_POINT_SCALE
+        );
+        assert_relative_eq!(
+            result.candles[0].low,
+            (100.0 / 104.0 - 1.0) * BASIS_POINT_SCALE
+        );
+        assert_eq!(result.scale, BASIS_POINT_SCALE);
+        assert_eq!(result.unit, "bps");
         assert_eq!(result.dropped_left, 1);
         assert_eq!(result.dropped_right, 1);
     }
@@ -313,7 +325,7 @@ mod tests {
             &request(Venue::MexcPerp),
             &[candle(0, 1.0, 1.0, 1.0, 1.0)],
             &[candle(60_000, 1.0, 1.0, 1.0, 1.0)],
-            10_000.0,
+            BASIS_POINT_SCALE,
         );
         assert!(matches!(result, Err(AppError::NoOverlap)));
     }

@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use futures::future::join_all;
 use reqwest::{Client, Response};
 use serde_json::{Value, json};
 use url::Url;
@@ -368,13 +369,51 @@ async fn hyperliquid_candles(
 }
 
 async fn hyperliquid_markets(client: &Client, venue: Venue) -> Result<Vec<Market>, AppError> {
+    let mut markets = hyperliquid_market_universe(client, venue, None).await?;
     let response = client
         .post("https://api.hyperliquid.xyz/info")
-        .json(&json!({"type":"meta"}))
+        .json(&json!({"type":"perpDexs"}))
         .send()
         .await
         .map_err(|error| upstream(venue, error))?;
     let value = read_json(response, venue).await?;
+    let dexes: Vec<String> = value
+        .as_array()
+        .ok_or_else(|| upstream(venue, "unexpected perpetual DEX response"))?
+        .iter()
+        .filter_map(|row| row.get("name")?.as_str().map(str::to_owned))
+        .collect();
+    let hip3 = join_all(
+        dexes
+            .iter()
+            .map(|dex| hyperliquid_market_universe(client, venue, Some(dex))),
+    )
+    .await;
+    for mut universe in hip3.into_iter().flatten() {
+        markets.append(&mut universe);
+    }
+    Ok(markets)
+}
+
+async fn hyperliquid_market_universe(
+    client: &Client,
+    venue: Venue,
+    dex: Option<&str>,
+) -> Result<Vec<Market>, AppError> {
+    let body = match dex {
+        Some(dex) => json!({"type":"meta","dex":dex}),
+        None => json!({"type":"meta"}),
+    };
+    let response = client
+        .post("https://api.hyperliquid.xyz/info")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|error| upstream(venue, error))?;
+    parse_hyperliquid_markets(&read_json(response, venue).await?, venue)
+}
+
+fn parse_hyperliquid_markets(value: &Value, venue: Venue) -> Result<Vec<Market>, AppError> {
     let rows = value["universe"]
         .as_array()
         .ok_or_else(|| upstream(venue, "missing universe"))?;
@@ -382,9 +421,10 @@ async fn hyperliquid_markets(client: &Client, venue: Venue) -> Result<Vec<Market
         .iter()
         .filter_map(|row| {
             let symbol = row["name"].as_str()?;
+            let base = symbol.rsplit_once(':').map_or(symbol, |(_, base)| base);
             Some(Market {
                 symbol: symbol.into(),
-                base: symbol.into(),
+                base: base.into(),
                 quote: "USD".into(),
                 active: !row["isDelisted"].as_bool().unwrap_or(false),
             })
@@ -856,5 +896,21 @@ mod tests {
         assert_eq!(normalized.len(), 2);
         assert_eq!(normalized[0].time, 120_000);
         assert_eq!(normalized[1].time, 180_000);
+    }
+
+    #[test]
+    fn hyperliquid_hip3_markets_preserve_dex_prefix_and_normalize_base() {
+        let value = json!({
+            "universe": [
+                {"name":"xyz:SPCX","isDelisted":false},
+                {"name":"xyz:OLD","isDelisted":true}
+            ]
+        });
+        let markets = parse_hyperliquid_markets(&value, Venue::HyperliquidPerp).unwrap();
+        assert_eq!(markets[0].symbol, "xyz:SPCX");
+        assert_eq!(markets[0].base, "SPCX");
+        assert_eq!(markets[0].normalized_symbol(), "SPCX/USD");
+        assert!(markets[0].active);
+        assert!(!markets[1].active);
     }
 }

@@ -39,6 +39,16 @@ test.describe('deployed live Rust service', () => {
     expect(tickerBody.cache_ttl_seconds).toBe(300);
     expect(tickerBody.data.some(ticker => ticker.normalized_symbol === 'WLFI/USDT')).toBeTruthy();
 
+    const hip3 = await request.get(new URL('/api/v1/markets?venue=hyperliquid_perp&query=SPCX&limit=100', liveApiBaseUrl).href);
+    expect(hip3.ok()).toBeTruthy();
+    expect((await hip3.json()).data.some(market => market.symbol === 'xyz:SPCX')).toBeTruthy();
+
+    const suggestions = await request.get(new URL('/api/v1/tickers/suggest?source_venue=ondo_perp&source_symbol=SPCX-USD.P&target_venue=hyperliquid_perp', liveApiBaseUrl).href);
+    expect(suggestions.ok()).toBeTruthy();
+    const suggestionBody = await suggestions.json();
+    expect(suggestionBody.data[0].symbol).toBe('xyz:SPCX');
+    expect(suggestionBody.data[0].confidence).toBe(1);
+
     const spec = await request.get(new URL('/openapi.json', liveApiBaseUrl).href);
     const contract = await spec.json();
     expect(contract.components.schemas.ComparisonResponse.required).toContain('candles');

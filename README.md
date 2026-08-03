@@ -31,7 +31,7 @@ The Render service also hosts the complete UI and agent-callable API on one orig
 | MEXC | Spot, perpetual |
 | OKX | Spot, perpetual swap |
 
-All adapters use public, unauthenticated market-data APIs. Symbols retain each venue's native format—for example `BTCUSDT`, `BTC_USDT`, `BTC-USDT-SWAP`, `BTC`, or `BTC-USD.P`. Use the markets endpoint to discover them.
+All adapters use public, unauthenticated market-data APIs. Symbols retain each venue's native format—for example `BTCUSDT`, `BTC_USDT`, `BTC-USDT-SWAP`, `BTC`, `xyz:SPCX`, or `BTC-USD.P`. Hyperliquid discovery dynamically enumerates the default perpetual universe and every active HIP-3 perp DEX. Use the markets endpoint to discover them.
 
 ## Run locally
 
@@ -75,6 +75,7 @@ Endpoints:
 - `GET /api/v1/venues`
 - `GET /api/v1/markets?venue=bybit_perp&query=WLFI%2FUSDT&limit=100`
 - `GET /api/v1/tickers?query=WLFI%2FUSDT&limit=100`
+- `GET /api/v1/tickers/suggest?source_venue=ondo_perp&source_symbol=SPCX-USD.P&target_venue=hyperliquid_perp`
 - `GET /api/v1/candles?venue=...&market=...&interval=...&from=...&to=...&limit=...`
 - `GET /api/v1/compare?left_venue=...&left_market=...&right_venue=...&right_market=...&interval=...&from=...&to=...&limit=...&scale=10000`
 
@@ -91,7 +92,7 @@ high  = (A.high  / B.low   - 1) × scale
 low   = (A.low   / B.high  - 1) × scale
 ```
 
-With `scale=10000`, values are basis points. The high/low calculation is a conservative OHLC envelope, not a claim that venue extremes happened simultaneously. Deriving exact synthetic extremes would require synchronized trades or finer-grained bars. Only candles with identical normalized opening timestamps are joined; dropped counts are included in each response.
+With `scale=10000`, values are basis points. Comparisons require matching canonical base assets; the suggestion endpoint ranks equivalent native symbols and flags contract-size aliases that need multiplier review. The high/low calculation is a conservative OHLC envelope, not a claim that venue extremes happened simultaneously. Deriving exact synthetic extremes would require synchronized trades or finer-grained bars. Only candles with identical normalized opening timestamps are joined; dropped counts are included in each response.
 
 ## Verification
 

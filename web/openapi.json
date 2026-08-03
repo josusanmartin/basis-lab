@@ -86,6 +86,31 @@
         }
       }
     },
+    "/api/v1/tickers/suggest": {
+      "get": {
+        "operationId": "suggestEquivalentTickers",
+        "summary": "Suggest equivalent native symbols on another venue",
+        "description": "Ranks exact normalized-base matches first, followed by known aliases and clearly flagged contract-size candidates. Hyperliquid results include dynamically discovered HIP-3 markets such as xyz:SPCX.",
+        "tags": ["Market data"],
+        "parameters": [
+          { "name": "source_venue", "in": "query", "required": true, "schema": { "$ref": "#/components/schemas/Venue" } },
+          { "name": "source_symbol", "in": "query", "required": true, "schema": { "$ref": "#/components/schemas/MarketSymbol" }, "example": "SPCX-USD.P" },
+          { "name": "target_venue", "in": "query", "required": true, "schema": { "$ref": "#/components/schemas/Venue" } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 8 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Ranked equivalent ticker suggestions",
+            "headers": { "Cache-Control": { "schema": { "type": "string" }, "description": "Public browser cache and stale-while-revalidate policy" } },
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TickerSuggestionsResponse" } } }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "502": { "$ref": "#/components/responses/UpstreamError" },
+          "503": { "$ref": "#/components/responses/Busy" },
+          "504": { "$ref": "#/components/responses/UpstreamTimeout" }
+        }
+      }
+    },
     "/api/v1/candles": {
       "get": {
         "operationId": "getCandles",
@@ -116,7 +141,7 @@
       "get": {
         "operationId": "compareMarkets",
         "summary": "Calculate cross-venue premium/discount candles",
-        "description": "Calculates (left / right - 1) × scale. Open and close use like-for-like fields. High uses left.high / right.low and low uses left.low / right.high, a conservative envelope because OHLC cannot prove simultaneous venue extremes. Only identical normalized opening timestamps are joined.",
+        "description": "Calculates (left / right - 1) × scale for markets with the same normalized base asset. Open and close use like-for-like fields. High uses left.high / right.low and low uses left.low / right.high, a conservative envelope because OHLC cannot prove simultaneous venue extremes. Only identical normalized opening timestamps are joined.",
         "tags": ["Comparison"],
         "parameters": [
           { "name": "left_venue", "in": "query", "required": true, "schema": { "$ref": "#/components/schemas/Venue" } },
@@ -237,6 +262,35 @@
           "total": { "type": "integer", "minimum": 0 },
           "cache_ttl_seconds": { "type": "integer", "const": 300 },
           "data": { "type": "array", "items": { "$ref": "#/components/schemas/TickerListing" } }
+        }
+      },
+      "TickerSuggestion": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["normalized_symbol", "symbol", "base", "quote", "venue", "venue_label", "market_type", "confidence", "match_reason", "requires_multiplier_check"],
+        "properties": {
+          "normalized_symbol": { "type": "string", "example": "SPCX/USD" },
+          "symbol": { "$ref": "#/components/schemas/MarketSymbol" },
+          "base": { "type": "string", "example": "SPCX" },
+          "quote": { "type": "string", "example": "USD" },
+          "venue": { "$ref": "#/components/schemas/Venue" },
+          "venue_label": { "type": "string", "example": "Hyperliquid" },
+          "market_type": { "type": "string", "enum": ["spot", "perpetual"] },
+          "confidence": { "type": "number", "minimum": 0, "maximum": 1, "example": 1 },
+          "match_reason": { "type": "string", "example": "same normalized base" },
+          "requires_multiplier_check": { "type": "boolean" }
+        }
+      },
+      "TickerSuggestionsResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["source", "target_venue", "total", "cache_ttl_seconds", "data"],
+        "properties": {
+          "source": { "$ref": "#/components/schemas/TickerListing" },
+          "target_venue": { "$ref": "#/components/schemas/Venue" },
+          "total": { "type": "integer", "minimum": 0 },
+          "cache_ttl_seconds": { "type": "integer", "const": 300 },
+          "data": { "type": "array", "items": { "$ref": "#/components/schemas/TickerSuggestion" } }
         }
       },
       "Candle": {

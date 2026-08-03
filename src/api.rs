@@ -24,9 +24,10 @@ use tower_http::{
 use crate::{
     error::AppError,
     model::{
-        Candle, CandleRequest, Interval, Market, TickerListing, Venue, VenueInfo, compact_ticker,
+        Candle, CandleRequest, Interval, Market, TickerListing, Venue, VenueInfo, canonical_asset,
+        compact_ticker, contract_unit_asset,
     },
-    service::{MarketDataService, TICKER_CACHE_TTL_SECONDS},
+    service::{BASIS_POINT_SCALE, MarketDataService, TICKER_CACHE_TTL_SECONDS},
 };
 
 const MAX_LIMIT: usize = 1500;
@@ -60,6 +61,7 @@ pub fn router(state: AppState) -> Router {
         .route("/venues", get(venues))
         .route("/markets", get(markets))
         .route("/tickers", get(tickers))
+        .route("/tickers/suggest", get(ticker_suggestions))
         .route("/candles", get(candles))
         .route("/compare", get(compare));
 
@@ -261,6 +263,125 @@ async fn tickers(
     ))
 }
 
+#[derive(Deserialize)]
+struct TickerSuggestionsQuery {
+    source_venue: String,
+    source_symbol: String,
+    target_venue: String,
+    #[serde(default = "default_suggestion_limit")]
+    limit: usize,
+}
+
+fn default_suggestion_limit() -> usize {
+    8
+}
+
+#[derive(Serialize)]
+struct TickerSuggestion {
+    #[serde(flatten)]
+    ticker: TickerListing,
+    confidence: f64,
+    match_reason: &'static str,
+    requires_multiplier_check: bool,
+}
+
+async fn ticker_suggestions(
+    State(state): State<AppState>,
+    Query(query): Query<TickerSuggestionsQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    validate_market(&query.source_symbol)?;
+    if query.limit == 0 || query.limit > 100 {
+        return Err(AppError::BadRequest(
+            "suggestion limit must be between 1 and 100".into(),
+        ));
+    }
+    let source_venue = Venue::from_str(&query.source_venue)?;
+    let target_venue = Venue::from_str(&query.target_venue)?;
+    let _permit = acquire(&state).await?;
+    let cached = state.service.tickers().await?;
+    let source = cached
+        .iter()
+        .find(|ticker| {
+            ticker.venue == source_venue.id()
+                && (ticker.symbol.eq_ignore_ascii_case(&query.source_symbol)
+                    || ticker
+                        .normalized_symbol
+                        .eq_ignore_ascii_case(&query.source_symbol))
+        })
+        .ok_or_else(|| {
+            AppError::BadRequest(format!(
+                "unknown source market `{}` on {}",
+                query.source_symbol,
+                source_venue.id()
+            ))
+        })?;
+    let mut suggestions: Vec<(u8, TickerSuggestion)> = cached
+        .iter()
+        .filter(|ticker| ticker.venue == target_venue.id())
+        .filter_map(|ticker| {
+            let (rank, confidence, match_reason, requires_multiplier_check) =
+                equivalence_match(&source.base, &ticker.base)?;
+            Some((
+                rank,
+                TickerSuggestion {
+                    ticker: ticker.clone(),
+                    confidence,
+                    match_reason,
+                    requires_multiplier_check,
+                },
+            ))
+        })
+        .collect();
+    suggestions.sort_unstable_by(|(left_rank, left), (right_rank, right)| {
+        left_rank
+            .cmp(right_rank)
+            .then_with(|| {
+                left.ticker
+                    .normalized_symbol
+                    .cmp(&right.ticker.normalized_symbol)
+            })
+            .then_with(|| left.ticker.symbol.cmp(&right.ticker.symbol))
+    });
+    let total = suggestions.len();
+    let data: Vec<TickerSuggestion> = suggestions
+        .into_iter()
+        .take(query.limit)
+        .map(|(_, suggestion)| suggestion)
+        .collect();
+    Ok((
+        [(header::CACHE_CONTROL, ticker_cache_control())],
+        Json(json!({
+            "source": source,
+            "target_venue": target_venue.id(),
+            "total": total,
+            "cache_ttl_seconds": TICKER_CACHE_TTL_SECONDS,
+            "data": data,
+        })),
+    ))
+}
+
+fn equivalence_match(
+    source_base: &str,
+    candidate_base: &str,
+) -> Option<(u8, f64, &'static str, bool)> {
+    let source_raw = compact_ticker(source_base);
+    let candidate_raw = compact_ticker(candidate_base);
+    if source_raw.is_empty() || candidate_raw.is_empty() {
+        return None;
+    }
+    if source_raw == candidate_raw {
+        return Some((0, 1.0, "same normalized base", false));
+    }
+    if canonical_asset(&source_raw) == canonical_asset(&candidate_raw) {
+        return Some((1, 0.98, "known ticker alias", false));
+    }
+    let source_unit =
+        contract_unit_asset(&source_raw).unwrap_or_else(|| canonical_asset(&source_raw));
+    let candidate_unit =
+        contract_unit_asset(&candidate_raw).unwrap_or_else(|| canonical_asset(&candidate_raw));
+    (source_unit == candidate_unit).then_some((2, 0.7, "possible contract-size alias", true))
+}
+
 fn validate_search(query: &str, limit: usize) -> Result<(), AppError> {
     if limit == 0 || limit > 1000 {
         return Err(AppError::BadRequest(
@@ -389,7 +510,7 @@ struct CompareQuery {
 }
 
 fn default_scale() -> f64 {
-    10_000.0
+    BASIS_POINT_SCALE
 }
 
 async fn compare(
@@ -400,7 +521,7 @@ async fn compare(
     validate_market(&query.right_market)?;
     let interval = Interval::from_str(&query.interval)?;
     validate_window(query.from, query.to, query.limit, interval)?;
-    let left = CandleRequest {
+    let mut left = CandleRequest {
         venue: Venue::from_str(&query.left_venue)?,
         market: query.left_market,
         interval,
@@ -408,7 +529,7 @@ async fn compare(
         to: query.to,
         limit: query.limit,
     };
-    let right = CandleRequest {
+    let mut right = CandleRequest {
         venue: Venue::from_str(&query.right_venue)?,
         market: query.right_market,
         interval,
@@ -417,7 +538,44 @@ async fn compare(
         limit: query.limit,
     };
     let _permit = acquire(&state).await?;
+    let (left_markets, right_markets) = tokio::try_join!(
+        state.service.markets(left.venue),
+        state.service.markets(right.venue),
+    )?;
+    let (left_metadata, right_metadata) =
+        ensure_comparable_markets(&left_markets, &left.market, &right_markets, &right.market)?;
+    left.market.clone_from(&left_metadata.symbol);
+    right.market.clone_from(&right_metadata.symbol);
     Ok(Json(state.service.compare(left, right, query.scale).await?))
+}
+
+fn ensure_comparable_markets<'left, 'right>(
+    left_markets: &'left [Market],
+    left_symbol: &str,
+    right_markets: &'right [Market],
+    right_symbol: &str,
+) -> Result<(&'left Market, &'right Market), AppError> {
+    let left = left_markets
+        .iter()
+        .find(|market| market.symbol.eq_ignore_ascii_case(left_symbol))
+        .ok_or_else(|| {
+            AppError::BadRequest(format!("unknown comparison market `{left_symbol}`"))
+        })?;
+    let right = right_markets
+        .iter()
+        .find(|market| market.symbol.eq_ignore_ascii_case(right_symbol))
+        .ok_or_else(|| {
+            AppError::BadRequest(format!("unknown comparison market `{right_symbol}`"))
+        })?;
+    let left_base = canonical_asset(&left.base);
+    let right_base = canonical_asset(&right.base);
+    if left_base.is_empty() || right_base.is_empty() || left_base != right_base {
+        return Err(AppError::BadRequest(format!(
+            "basis comparison requires the same base asset; `{left_symbol}` resolves to `{}` but `{right_symbol}` resolves to `{}`",
+            left.base, right.base
+        )));
+    }
+    Ok((left, right))
 }
 
 async fn acquire(state: &AppState) -> Result<tokio::sync::SemaphorePermit<'_>, AppError> {
@@ -531,9 +689,80 @@ mod tests {
     }
 
     #[test]
+    fn basis_comparison_requires_matching_base_assets() {
+        let spx = Market {
+            symbol: "SPX".into(),
+            base: "SPX".into(),
+            quote: "USD".into(),
+            active: true,
+        };
+        let spcx = Market {
+            symbol: "SPCX-USD.P".into(),
+            base: "SPCX".into(),
+            quote: "USD".into(),
+            active: true,
+        };
+        let btc_perp = Market {
+            symbol: "BTC-USD.P".into(),
+            base: "btc".into(),
+            quote: "USD".into(),
+            active: true,
+        };
+        let btc_spot = Market {
+            symbol: "BTCUSDT".into(),
+            base: "BTC".into(),
+            quote: "USDT".into(),
+            active: true,
+        };
+        let hip3_spcx = Market {
+            symbol: "xyz:SPCX".into(),
+            base: "SPCX".into(),
+            quote: "USD".into(),
+            active: true,
+        };
+        let ondo_spcx = Market {
+            symbol: "SPCX-USD.P".into(),
+            base: "SPCX".into(),
+            quote: "USD".into(),
+            active: true,
+        };
+
+        assert!(ensure_comparable_markets(&[spx], "SPX", &[spcx], "SPCX-USD.P").is_err());
+        assert!(
+            ensure_comparable_markets(&[btc_perp], "BTC-USD.P", &[btc_spot], "BTCUSDT").is_ok()
+        );
+        let left = [hip3_spcx];
+        let right = [ondo_spcx];
+        let (resolved_left, _) =
+            ensure_comparable_markets(&left, "XYZ:SPCX", &right, "SPCX-USD.P").unwrap();
+        assert_eq!(resolved_left.symbol, "xyz:SPCX");
+    }
+
+    #[test]
+    fn ticker_equivalence_prefers_exact_and_marks_contract_multipliers() {
+        assert_eq!(
+            equivalence_match("SPCX", "SPCX"),
+            Some((0, 1.0, "same normalized base", false))
+        );
+        assert_eq!(
+            equivalence_match("XBT", "BTC"),
+            Some((1, 0.98, "known ticker alias", false))
+        );
+        assert_eq!(
+            equivalence_match("1000PEPE", "PEPE"),
+            Some((2, 0.7, "possible contract-size alias", true))
+        );
+        assert_eq!(equivalence_match("SPX", "SPCX"), None);
+    }
+
+    #[test]
     fn openapi_contract_covers_every_venue_and_comparison_field() {
         let spec: Value = serde_json::from_str(include_str!("../web/openapi.json")).unwrap();
         assert!(spec.pointer("/paths/~1api~1v1~1tickers/get").is_some());
+        assert!(
+            spec.pointer("/paths/~1api~1v1~1tickers~1suggest/get")
+                .is_some()
+        );
         let documented_venues = spec
             .pointer("/components/schemas/Venue/enum")
             .and_then(Value::as_array)

@@ -255,6 +255,28 @@ pub fn compact_ticker(value: &str) -> String {
         .collect()
 }
 
+pub fn canonical_asset(value: &str) -> String {
+    let compact = compact_ticker(value);
+    match compact.as_str() {
+        "XBT" | "WBTC" => "BTC".into(),
+        "WETH" => "ETH".into(),
+        "XDG" => "DOGE".into(),
+        _ => compact,
+    }
+}
+
+pub fn contract_unit_asset(value: &str) -> Option<String> {
+    let compact = compact_ticker(value);
+    ["1000000", "100000", "10000", "1000"]
+        .into_iter()
+        .find_map(|prefix| {
+            compact
+                .strip_prefix(prefix)
+                .filter(|asset| asset.len() >= 2)
+                .map(canonical_asset)
+        })
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct VenueInfo {
     pub id: &'static str,
@@ -327,5 +349,9 @@ mod tests {
         assert_eq!(ticker.venue, "mexc_perp");
         assert!(ticker.search_key().contains("BTCUSDT"));
         assert_eq!(compact_ticker(" btc-usdt.swap "), "BTCUSDTSWAP");
+        assert_eq!(canonical_asset("xbt"), "BTC");
+        assert_eq!(canonical_asset("WETH"), "ETH");
+        assert_eq!(contract_unit_asset("1000PEPE").as_deref(), Some("PEPE"));
+        assert_eq!(contract_unit_asset("1INCH"), None);
     }
 }

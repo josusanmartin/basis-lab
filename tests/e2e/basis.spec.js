@@ -2,21 +2,51 @@ const { test, expect } = require('@playwright/test');
 
 async function mockComparisonApi(page) {
   await page.route('**/api/v1/markets?*', route => {
-    const query = new URL(route.request().url()).searchParams.get('query') || '';
+    const requestUrl = new URL(route.request().url());
+    const query = requestUrl.searchParams.get('query') || '';
+    const venue = requestUrl.searchParams.get('venue');
     const needle = query.replace(/[^a-z0-9]/gi, '').toUpperCase();
-    const markets = [
+    const defaultMarkets = [
       { symbol: 'WLFIUSDT', normalized_symbol: 'WLFI/USDT', base: 'WLFI', quote: 'USDT', active: true },
       { symbol: 'BTCUSDT', normalized_symbol: 'BTC/USDT', base: 'BTC', quote: 'USDT', active: true },
       { symbol: 'ETHUSDT', normalized_symbol: 'ETH/USDT', base: 'ETH', quote: 'USDT', active: true }
-    ].filter(market => `${market.symbol}${market.normalized_symbol}${market.base}${market.quote}`.replace(/[^a-z0-9]/gi, '').toUpperCase().includes(needle));
+    ];
+    const venueMarkets = {
+      ondo_perp: [
+        { symbol: 'SPCX-USD.P', normalized_symbol: 'SPCX/USD', base: 'SPCX', quote: 'USD', active: true },
+        { symbol: 'BTC-USD.P', normalized_symbol: 'BTC/USD', base: 'BTC', quote: 'USD', active: true }
+      ],
+      hyperliquid_perp: [
+        { symbol: 'SPX', normalized_symbol: 'SPX/USD', base: 'SPX', quote: 'USD', active: true },
+        { symbol: 'xyz:SPCX', normalized_symbol: 'SPCX/USD', base: 'SPCX', quote: 'USD', active: true }
+      ]
+    };
+    const markets = (venueMarkets[venue] || defaultMarkets).filter(market => `${market.symbol}${market.normalized_symbol}${market.base}${market.quote}`.replace(/[^a-z0-9]/gi, '').toUpperCase().includes(needle));
     return route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({ data: markets })
     });
   });
+  await page.route('**/api/v1/tickers/suggest?*', route => {
+    const requestUrl = new URL(route.request().url());
+    const source = requestUrl.searchParams.get('source_symbol') || '';
+    const target = requestUrl.searchParams.get('target_venue');
+    const spcx = source.toUpperCase().includes('SPCX') && target === 'hyperliquid_perp';
+    const ticker = spcx
+      ? { symbol: 'xyz:SPCX', normalized_symbol: 'SPCX/USD', base: 'SPCX', quote: 'USD', venue: 'hyperliquid_perp', venue_label: 'Hyperliquid', market_type: 'perpetual' }
+      : { symbol: 'BTC_USDT', normalized_symbol: 'BTC/USDT', base: 'BTC', quote: 'USDT', venue: target, venue_label: 'Target venue', market_type: 'perpetual' };
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ data: [{ ...ticker, confidence: 1, match_reason: 'same normalized base', requires_multiplier_check: false }] })
+    });
+  });
   await page.route('**/api/v1/compare?*', async route => {
     const requestUrl = new URL(route.request().url());
+    if (requestUrl.searchParams.get('scale') !== '10000') {
+      return route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ error: { message: 'basis scale must be 10000' } }) });
+    }
     const interval = requestUrl.searchParams.get('interval') || '1h';
     const intervalMs = { '1m': 60e3, '3m': 180e3, '5m': 300e3, '15m': 900e3, '30m': 1800e3, '1h': 3600e3, '2h': 7200e3, '4h': 14400e3, '1d': 86400e3 }[interval];
     const count = 180;
@@ -47,6 +77,7 @@ async function mockComparisonApi(page) {
       body: JSON.stringify({
         interval,
         unit: 'basis points',
+        scale: 10000,
         matched_candles: count,
         dropped_left: 0,
         dropped_right: 0,
@@ -134,6 +165,28 @@ test.describe('Basis Lab browser workflow', () => {
     await input.press('Enter');
     await expect(input).toHaveValue('BTCUSDT');
     await expect(input).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  test('suggests the exact Hyperliquid HIP-3 equivalent on the other venue', async ({ page }) => {
+    await mockComparisonApi(page);
+    await page.goto('/?left_venue=ondo_perp&left_market=SPCX-USD.P&right_venue=hyperliquid_perp&right_market=SPX');
+
+    const left = page.locator('#left-market');
+    await left.fill('SPCX');
+    await expect(page.locator('#left-market-options .market-option')).toHaveCount(1);
+    await left.press('ArrowDown');
+    await left.press('Enter');
+
+    const suggestion = page.locator('#right-market-options .market-option');
+    await expect(suggestion).toHaveCount(1);
+    await expect(suggestion.locator('strong')).toHaveText('SPCX/USD');
+    await expect(suggestion.locator('span')).toContainText('xyz:SPCX · same normalized base');
+    await suggestion.click();
+    await expect(page.locator('#right-market')).toHaveValue('xyz:SPCX');
+
+    await page.locator('#run').click();
+    await expect(page.locator('#formula')).toContainText('× 10,000');
+    await expect(page.locator('#metric-latest')).not.toHaveText('—');
   });
 
   test('exposes agent-facing API metadata and rejects unsafe inputs', async ({ request, page }) => {
