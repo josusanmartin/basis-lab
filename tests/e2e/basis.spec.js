@@ -120,6 +120,7 @@ test.describe('Basis Lab browser workflow', () => {
     await expect(page.locator('#volume-b-legend')).toBeVisible();
 
     const canvas = page.locator('#chart');
+    await expect(canvas).toHaveAttribute('aria-label', /separate venue A and B volume charts/);
     const box = await canvas.boundingBox();
     expect(box.width).toBeGreaterThan(testInfo.project.name.includes('mobile') ? 280 : 700);
     expect(box.height).toBeGreaterThan(300);
