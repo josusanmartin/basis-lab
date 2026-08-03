@@ -562,6 +562,16 @@ fn ondo_resolution(interval: Interval) -> &'static str {
     }
 }
 
+const ONDO_MAX_BARS: i64 = 4_900;
+
+fn ondo_request_from(request: &CandleRequest) -> i64 {
+    let maximum_window = request
+        .interval
+        .millis
+        .saturating_mul(ONDO_MAX_BARS.saturating_sub(1));
+    request.from.max(request.to.saturating_sub(maximum_window))
+}
+
 async fn ondo_candles(client: &Client, request: &CandleRequest) -> Result<Vec<Candle>, AppError> {
     let venue = request.venue;
     // The object-shaped /candles route requires auth. The documented UDF history route is
@@ -571,7 +581,7 @@ async fn ondo_candles(client: &Client, request: &CandleRequest) -> Result<Vec<Ca
     url.query_pairs_mut()
         .append_pair("symbol", &udf_symbol)
         .append_pair("resolution", ondo_resolution(request.interval))
-        .append_pair("from", &(request.from / 1000).to_string())
+        .append_pair("from", &(ondo_request_from(request) / 1000).to_string())
         .append_pair("to", &(request.to / 1000).to_string());
     let value = get(client, venue, url).await?;
     if value["s"].as_str() == Some("error") {
@@ -912,5 +922,19 @@ mod tests {
         assert_eq!(markets[0].normalized_symbol(), "SPCX/USD");
         assert!(markets[0].active);
         assert!(!markets[1].active);
+    }
+
+    #[test]
+    fn ondo_requests_the_latest_supported_window_instead_of_failing() {
+        let mut request = request();
+        request.venue = Venue::OndoPerp;
+        request.from = 0;
+        request.to = 7 * 86_400_000;
+        assert_eq!(
+            ondo_request_from(&request),
+            request.to - request.interval.millis * (ONDO_MAX_BARS - 1)
+        );
+        request.from = request.to - 86_400_000;
+        assert_eq!(ondo_request_from(&request), request.from);
     }
 }

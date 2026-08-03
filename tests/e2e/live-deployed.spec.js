@@ -14,7 +14,7 @@ test.describe('deployed live Rust service', () => {
     await page.goto(liveBaseUrl);
     await expect(page.locator('#health-label')).toHaveText('Live', { timeout: 30_000 });
     await expect(page.locator('#chart-pair')).toHaveText('WLFIUSDT / WLFI_USDT');
-    await expect(page.locator('#chart-subtitle')).toContainText('aligned 1h candles · bps');
+    await expect(page.locator('#chart-subtitle')).toContainText('aligned 1m candles · bps');
     await expect(page.locator('#metric-latest')).not.toHaveText('—');
     await expect(page.locator('#observations-body tr')).toHaveCount(12);
 

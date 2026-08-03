@@ -107,7 +107,10 @@ test.describe('Basis Lab browser workflow', () => {
     await expect(page).toHaveTitle(/Basis Lab/);
     await expect(page.locator('.intro')).toHaveCount(0);
     await expect(page.locator('#health-label')).toHaveText('Live');
+    await expect(page.getByRole('button', { name: '1M' })).toHaveClass(/active/);
+    await expect(page.getByRole('button', { name: '24H' })).toHaveClass(/active/);
     await expect(page.locator('#chart-pair')).toHaveText('WLFIUSDT / WLFI_USDT');
+    await expect(page.locator('#chart-subtitle')).toContainText('aligned 1m candles');
     await expect(page.locator('#metric-latest')).not.toHaveText('—');
     await expect(page.locator('#upper-entry')).not.toHaveText('—');
     await expect(page.locator('#observations-body tr')).toHaveCount(12);
@@ -134,6 +137,40 @@ test.describe('Basis Lab browser workflow', () => {
     await page.getByRole('button', { name: '15M' }).click();
     await expect(page.locator('#chart-subtitle')).toContainText('15m candles');
     expect(pageErrors).toEqual([]);
+  });
+
+  test('loads complete 48 and 72 hour minute ranges in daily chunks', async ({ page }) => {
+    const windows = [];
+    page.on('request', request => {
+      const requestUrl = new URL(request.url());
+      if (requestUrl.pathname === '/api/v1/compare') {
+        windows.push({
+          from: Number(requestUrl.searchParams.get('from')),
+          to: Number(requestUrl.searchParams.get('to')),
+          interval: requestUrl.searchParams.get('interval')
+        });
+      }
+    });
+    await mockComparisonApi(page);
+    await page.goto('/');
+    await expect(page.locator('#metric-latest')).not.toHaveText('—');
+
+    windows.length = 0;
+    await page.getByRole('button', { name: '48H' }).click();
+    await expect.poll(() => windows.length).toBe(2);
+    expect(windows.every(window => window.interval === '1m' && window.to - window.from <= 86_400_000)).toBeTruthy();
+    await expect(page.locator('#run')).toBeEnabled();
+
+    windows.length = 0;
+    await page.getByRole('button', { name: '72H' }).click();
+    await expect.poll(() => windows.length).toBe(3);
+    expect(windows.every(window => window.to - window.from <= 86_400_000)).toBeTruthy();
+    await expect(page.locator('#run')).toBeEnabled();
+
+    windows.length = 0;
+    await page.getByRole('button', { name: '7D' }).click();
+    await expect.poll(() => windows.length).toBe(3);
+    await expect(page.locator('#chart-subtitle')).toContainText('latest 72 hours available');
   });
 
   test('recovers from transient platform routing misses', async ({ page }) => {

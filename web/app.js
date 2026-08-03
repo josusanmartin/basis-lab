@@ -25,7 +25,7 @@
   const staticPreview = query.get('static_demo') === '1';
   const apiBase = (configuredApiBase || (hostedPreview ? hostedApiBase : location.origin)).replace(/\/$/,'');
   const basisPointScale = 10_000;
-  const state = {venues:fallbackVenues,interval:'1h',range:7,data:null,requestUrl:'',abort:null,visible:160,offset:0,hover:-1,drag:null,refreshTimer:null};
+  const state = {venues:fallbackVenues,interval:'1m',range:1,data:null,requestUrl:'',partialWindow:'',abort:null,visible:160,offset:0,hover:-1,drag:null,refreshTimer:null};
   const marketSearch = {left:{timer:null,abort:null,sequence:0,active:-1,items:[],open:false,selected:null,ignoreFocus:false},right:{timer:null,abort:null,sequence:0,active:-1,items:[],open:false,selected:null,ignoreFocus:false}};
   const metrics = {latest:$('#metric-latest'),mean:$('#metric-mean'),sigma:$('#metric-sigma'),z:$('#metric-z'),range:$('#metric-range'),direction:$('#metric-direction'),signal:$('#metric-signal')};
 
@@ -34,7 +34,7 @@
     [refs.leftVenue,refs.rightVenue].forEach(select => {select.replaceChildren(...state.venues.map(v=>option(v.id,v.label)))});
     refs.leftVenue.value=queryValue('left_venue')||'bybit_perp'; refs.rightVenue.value=queryValue('right_venue')||'mexc_perp';
     refs.leftMarket.value=queryValue('left_market')||'WLFIUSDT'; refs.rightMarket.value=queryValue('right_market')||'WLFI_USDT';
-    state.interval=queryValue('interval')||'1h'; state.range=Number(queryValue('range')||7);
+    state.interval=queryValue('interval')||'1m'; state.range=Number(queryValue('range')||1);
     renderIntervals(); document.querySelectorAll('[data-range]').forEach(b=>b.classList.toggle('active',Number(b.dataset.range)===state.range));
   }
   function queryValue(name){return new URLSearchParams(location.search).get(name)}
@@ -132,22 +132,21 @@
     try {const q=new URLSearchParams({venue:select.value,query,limit:'100'}),response=await fetchApi(`${apiBase}/api/v1/markets?${q}`,{signal:search.abort.signal,headers:{Accept:'application/json'}});if(!response.ok)throw new Error();let data=(await response.json()).data;if(sequence!==search.sequence)return;if(!data.length)data=fallbackMarketResults(select.value,query);search.selected=data.find(market=>market.symbol.toUpperCase()===input.value.trim().toUpperCase())||null;renderMarketOptions(side,data);if(search.open)openMarketMenu(side)}
     catch(error){if(error.name==='AbortError')return;if(sequence===search.sequence){marketMessage(list,'Market search unavailable');if(search.open)openMarketMenu(side)}}
   }
-  function limits(){
-    const end=Date.now(),start=end-state.range*864e5;
-    const intervalMs={ '1m':6e4,'3m':18e4,'5m':3e5,'15m':9e5,'30m':18e5,'1h':36e5,'2h':72e5,'4h':144e5,'1d':864e5}[state.interval];
-    return {from:start,to:end,limit:Math.min(1500,Math.ceil((end-start)/intervalMs)+4)};
-  }
-  function makeUrl(){const window=limits();return `${apiBase}/api/v1/compare?${new URLSearchParams({left_venue:refs.leftVenue.value,left_market:refs.leftMarket.value.trim(),right_venue:refs.rightVenue.value,right_market:refs.rightMarket.value.trim(),interval:state.interval,from:String(window.from),to:String(window.to),limit:String(window.limit),scale:String(basisPointScale)})}`}
+  function intervalMilliseconds(){return{ '1m':6e4,'3m':18e4,'5m':3e5,'15m':9e5,'30m':18e5,'1h':36e5,'2h':72e5,'4h':144e5,'1d':864e5}[state.interval]}
+  function limits(){const to=Date.now(),from=to-state.range*864e5,step=intervalMilliseconds();return{from,to,limit:Math.min(1500,Math.ceil((to-from)/step)+4)}}
+  function comparisonWindows(){const requested=limits();state.partialWindow='';if(state.interval!=='1m')return[requested];const earliest=Math.max(requested.from,requested.to-72*36e5);if(earliest>requested.from)state.partialWindow='latest 72 hours available';const windows=[];for(let from=earliest;from<requested.to;from+=864e5){const to=Math.min(requested.to,from+864e5);windows.push({from,to,limit:Math.min(1500,Math.ceil((to-from)/6e4)+4)})}return windows}
+  function makeUrl(window=limits()){return `${apiBase}/api/v1/compare?${new URLSearchParams({left_venue:refs.leftVenue.value,left_market:refs.leftMarket.value.trim(),right_venue:refs.rightVenue.value,right_market:refs.rightMarket.value.trim(),interval:state.interval,from:String(window.from),to:String(window.to),limit:String(window.limit),scale:String(basisPointScale)})}`}
+  async function fetchComparison(window){let url=makeUrl(window),response=await fetchApi(url,{signal:state.abort.signal,headers:{Accept:'application/json'}}),body=await response.json().catch(()=>({}));if(!response.ok&&/maximal number of bars exceeded/i.test(body.error?.message||'')){const step=intervalMilliseconds(),adjusted={...window,from:Math.max(window.from,window.to-step*4899)};state.partialWindow='latest available venue window';url=makeUrl(adjusted);response=await fetchApi(url,{signal:state.abort.signal,headers:{Accept:'application/json'}});body=await response.json().catch(()=>({}))}if(!response.ok)throw new Error(body.error?.message||`Request failed (${response.status})`);return{body,url}}
+  function mergeComparisons(parts){if(parts.length===1)return parts[0];const template=parts.at(-1),byTime=new Map();parts.forEach(part=>part.candles.forEach(candle=>byTime.set(candle.time,candle)));const candles=[...byTime.values()].sort((left,right)=>left.time-right.time),closes=candles.map(candle=>candle.close),mean=closes.reduce((sum,value)=>sum+value,0)/closes.length,variance=closes.reduce((sum,value)=>sum+(value-mean)**2,0)/closes.length,standard_deviation=Math.sqrt(variance),latest=closes.at(-1);return{...template,candles,matched_candles:candles.length,dropped_left:parts.reduce((sum,part)=>sum+part.dropped_left,0),dropped_right:parts.reduce((sum,part)=>sum+part.dropped_right,0),stats:{latest,mean,standard_deviation,minimum:Math.min(...candles.map(candle=>candle.low)),maximum:Math.max(...candles.map(candle=>candle.high)),z_score:standard_deviation?(latest-mean)/standard_deviation:0}}}
   function showComparisonError(message,dataError=false){state.data=null;refs.run.disabled=false;refs.loading.hidden=true;refs.empty.hidden=false;refs.empty.querySelector('strong').textContent='Comparison unavailable';refs.empty.querySelector('p').textContent=message;refs.chartPair.textContent=`${refs.leftMarket.value.trim()} / ${refs.rightMarket.value.trim()}`;refs.chartSubtitle.textContent=message;refs.alignment.textContent='Choose markets with the same normalized base asset';[metrics.latest,metrics.mean,metrics.sigma,metrics.z,metrics.range,refs.upper,refs.lower,refs.exitWindow].forEach(element=>element.textContent='—');metrics.direction.textContent='No basis signal';metrics.signal.textContent='CHECK PAIR';refs.observations.replaceChildren();draw();if(dataError){refs.healthDot.className='error';refs.healthLabel.textContent='Data error'}toast(message)}
   async function compare(silent=false){
     if(!refs.leftMarket.value.trim()||!refs.rightMarket.value.trim())return toast('Choose both markets');
     const validationError=pairValidationError();if(validationError){state.abort?.abort();showComparisonError(validationError);return}
-    state.abort?.abort();state.abort=new AbortController();state.requestUrl=makeUrl();
+    state.abort?.abort();state.abort=new AbortController();const windows=comparisonWindows();state.requestUrl=makeUrl(windows[0]);
     refs.run.disabled=true;if(!silent){refs.loading.hidden=false;refs.empty.hidden=true}
     try {
       if(staticPreview){state.data=previewData();state.visible=Math.min(state.data.candles.length,Math.max(80,Math.round(refs.wrap.clientWidth/7)));state.offset=0;state.hover=-1;updateUrl();renderData();refs.healthDot.className='preview';refs.healthLabel.textContent='Static demo';return}
-      const response=await fetchApi(state.requestUrl,{signal:state.abort.signal,headers:{Accept:'application/json'}});const body=await response.json().catch(()=>({}));
-      if(!response.ok)throw new Error(body.error?.message||`Request failed (${response.status})`);
+      const results=await Promise.all(windows.map(fetchComparison)),body=mergeComparisons(results.map(result=>result.body));state.requestUrl=results.at(-1).url;
       state.data=body;state.visible=Math.min(body.candles.length,Math.max(80,Math.round(refs.wrap.clientWidth/7)));state.offset=0;state.hover=-1;
       updateUrl();renderData();refs.healthDot.className='online';refs.healthLabel.textContent='Live';
     } catch(error) {if(error.name==='AbortError')return;showComparisonError(error.message,true)}
@@ -163,10 +162,10 @@
     const data=state.data,stats=data.stats,left=refs.leftMarket.value.trim(),right=refs.rightMarket.value.trim(),scale=Number(data.scale)||basisPointScale;
     refs.toast.classList.remove('show');
     refs.formula.textContent=`(${venue(refs.leftVenue.value).label}:${left} ÷ ${venue(refs.rightVenue.value).label}:${right} − 1) × ${scale.toLocaleString('en-US')}`;
-    refs.chartPair.textContent=`${left} / ${right}`;refs.chartSubtitle.textContent=`${data.candles.length.toLocaleString()} aligned ${data.interval} candles · ${data.unit}`;
+    refs.chartPair.textContent=`${left} / ${right}`;refs.chartSubtitle.textContent=`${data.candles.length.toLocaleString()} aligned ${data.interval} candles · ${data.unit}${state.partialWindow?` · ${state.partialWindow}`:''}`;
     setMetric(metrics.latest,formatBps(stats.latest),stats.latest);setMetric(metrics.mean,formatBps(stats.mean),stats.mean);metrics.sigma.textContent=`${Math.abs(stats.standard_deviation).toFixed(1)} bp`;setMetric(metrics.z,`${stats.z_score>=0?'+':''}${stats.z_score.toFixed(2)}σ`,stats.z_score);
     metrics.range.textContent=`${stats.minimum.toFixed(0)} → ${stats.maximum.toFixed(0)}`;metrics.direction.textContent=stats.latest>=0?'A trades at a premium':'A trades at a discount';metrics.signal.textContent=signal(stats.latest).label;
-    refs.alignment.textContent=`${data.matched_candles} matched · ${data.dropped_left} A-only · ${data.dropped_right} B-only`;
+    refs.alignment.textContent=`${data.matched_candles} matched · ${data.dropped_left} A-only · ${data.dropped_right} B-only${state.partialWindow?` · ${state.partialWindow}`:''}`;
     updateBands();renderTable();refs.empty.hidden=!!data.candles.length;draw();
   }
   function setMetric(element,text,value){element.textContent=text;element.classList.toggle('positive',value>0);element.classList.toggle('negative',value<0)}
