@@ -14,11 +14,13 @@ async function mockComparisonApi(page) {
     const venueMarkets = {
       ondo_perp: [
         { symbol: 'SPCX-USD.P', normalized_symbol: 'SPCX/USD', base: 'SPCX', quote: 'USD', active: true },
+        { symbol: 'US500-USD.P', normalized_symbol: 'US500/USD', base: 'US500', quote: 'USD', active: true },
         { symbol: 'BTC-USD.P', normalized_symbol: 'BTC/USD', base: 'BTC', quote: 'USD', active: true }
       ],
       hyperliquid_perp: [
         { symbol: 'SPX', normalized_symbol: 'SPX/USD', base: 'SPX', quote: 'USD', active: true },
-        { symbol: 'xyz:SPCX', normalized_symbol: 'SPCX/USD', base: 'SPCX', quote: 'USD', active: true }
+        { symbol: 'xyz:SPCX', normalized_symbol: 'SPCX/USD', base: 'SPCX', quote: 'USD', active: true },
+        { symbol: 'xyz:SP500', normalized_symbol: 'SP500/USD', base: 'SP500', quote: 'USD', active: true }
       ]
     };
     const markets = (venueMarkets[venue] || defaultMarkets).filter(market => `${market.symbol}${market.normalized_symbol}${market.base}${market.quote}`.replace(/[^a-z0-9]/gi, '').toUpperCase().includes(needle));
@@ -188,6 +190,29 @@ test.describe('Basis Lab browser workflow', () => {
     await page.locator('#run').click();
     await expect(page.locator('#formula')).toContainText('× 10,000');
     await expect(page.locator('#metric-latest')).not.toHaveText('—');
+  });
+
+  test('blocks SPX token comparisons against the S&P 500 index', async ({ page }) => {
+    let comparisonRequests = 0;
+    await mockComparisonApi(page);
+    page.on('request', request => {
+      if (new URL(request.url()).pathname === '/api/v1/compare') comparisonRequests += 1;
+    });
+    await page.goto('/?left_venue=hyperliquid_perp&left_market=SPX&right_venue=ondo_perp&right_market=US500-USD.P');
+
+    await expect(page.locator('#chart-subtitle')).toContainText('SPX is the SPX6900 token, not the S&P 500');
+    await expect(page.locator('#metric-latest')).toHaveText('—');
+    await expect(page.locator('#health-label')).toHaveText('Live');
+    expect(comparisonRequests).toBe(0);
+
+    const left = page.locator('#left-market');
+    await left.fill('xyz:SP500');
+    await expect(page.locator('#left-market-options .market-option')).toHaveCount(1);
+    await left.press('ArrowDown');
+    await left.press('Enter');
+    await page.locator('#run').click();
+    await expect(page.locator('#metric-latest')).not.toHaveText('—');
+    expect(comparisonRequests).toBe(1);
   });
 
   test('exposes agent-facing API metadata and rejects unsafe inputs', async ({ request, page }) => {

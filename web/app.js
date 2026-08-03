@@ -57,7 +57,7 @@
   async function bootstrap(){
     try {if(staticPreview)throw new Error();const response=await fetchApi(`${apiBase}/api/v1/venues`,{headers:{Accept:'application/json'}});if(!response.ok)throw new Error();state.venues=(await response.json()).data;refs.healthDot.className='online';refs.healthLabel.textContent='Live'}
     catch {refs.healthDot.className=staticPreview?'preview':'error';refs.healthLabel.textContent=staticPreview?'Static demo':'API offline'}
-    populateVenues(); bind(); loadMarkets('left');loadMarkets('right');await compare();
+    populateVenues(); bind(); await Promise.all([loadMarkets('left'),loadMarkets('right')]);await compare();
     state.refreshTimer=setInterval(()=>{if(!document.hidden)compare(true)},30000);
   }
   function bind(){
@@ -102,7 +102,10 @@
     rows.forEach((row,rowIndex)=>{const active=rowIndex===search.active;row.classList.toggle('active',active);row.setAttribute('aria-selected',String(active))});
     input.setAttribute('aria-activedescendant',rows[search.active].id);rows[search.active].scrollIntoView({block:'nearest'});
   }
-  function assetKey(value){const compact=String(value||'').replace(/[^a-z0-9]/gi,'').toUpperCase();return ({XBT:'BTC',WBTC:'BTC',WETH:'ETH',XDG:'DOGE'})[compact]||compact}
+  function assetKey(value){const compact=String(value||'').replace(/[^a-z0-9]/gi,'').toUpperCase();return ({XBT:'BTC',WBTC:'BTC',WETH:'ETH',XDG:'DOGE',US500:'SP500',USA500:'SP500',SPX500:'SP500'})[compact]||compact}
+  function inferredBase(venueId,symbol){const native=String(symbol||'').trim();if(venueId==='hyperliquid_perp')return native.split(':').at(-1)||'';if(venueId==='ondo_perp')return native.replace(/-USD\.P$/i,'');return ''}
+  function currentBase(side){const {select,input,search}=marketPicker(side),native=input.value.trim(),selected=search.selected;if(selected&&selected.symbol.toUpperCase()===native.toUpperCase())return selected.base;return inferredBase(select.value,native)}
+  function pairValidationError(){if(staticPreview)return'';const left=assetKey(currentBase('left')),right=assetKey(currentBase('right'));if(!left||!right||left===right)return'';if((left==='SPX'&&right==='SP500')||(left==='SP500'&&right==='SPX'))return'Asset mismatch: Hyperliquid SPX is the SPX6900 token, not the S&P 500. Choose xyz:SP500 or mkts:US500.';return`Asset mismatch: ${left} and ${right} are different underlying assets. Choose equivalent tickers from the dropdown.`}
   function selectMarket(side,index){const {input,search}=marketPicker(side),market=search.items[index];if(!market)return;input.value=market.symbol;search.selected=market;closeMarketMenu(side);if(document.activeElement!==input){search.ignoreFocus=true;input.focus()}const targetSide=side==='left'?'right':'left',target=marketPicker(targetSide);if(!target.search.selected||assetKey(target.search.selected.base)!==assetKey(market.base))suggestEquivalent(side,targetSide)}
   function marketMessage(list,message){const row=document.createElement('div');row.className='market-option-state';row.setAttribute('role','option');row.setAttribute('aria-disabled','true');row.textContent=message;list.replaceChildren(row)}
   function renderMarketOptions(side,items){
@@ -122,7 +125,7 @@
     if(staticPreview){renderMarketOptions(side,[{symbol:input.value,normalized_symbol:input.value}]);return}
     search.abort?.abort();search.abort=new AbortController();const sequence=++search.sequence,query=term??input.value.trim();
     if(open)marketMessage(list,'Searching cached tickers…');
-    try {const q=new URLSearchParams({venue:select.value,query,limit:'100'}),response=await fetchApi(`${apiBase}/api/v1/markets?${q}`,{signal:search.abort.signal,headers:{Accept:'application/json'}});if(!response.ok)throw new Error();const data=(await response.json()).data;if(sequence!==search.sequence)return;renderMarketOptions(side,data);if(search.open)openMarketMenu(side)}
+    try {const q=new URLSearchParams({venue:select.value,query,limit:'100'}),response=await fetchApi(`${apiBase}/api/v1/markets?${q}`,{signal:search.abort.signal,headers:{Accept:'application/json'}});if(!response.ok)throw new Error();const data=(await response.json()).data;if(sequence!==search.sequence)return;search.selected=data.find(market=>market.symbol.toUpperCase()===input.value.trim().toUpperCase())||null;renderMarketOptions(side,data);if(search.open)openMarketMenu(side)}
     catch(error){if(error.name==='AbortError')return;if(sequence===search.sequence){marketMessage(list,'Market search unavailable');if(search.open)openMarketMenu(side)}}
   }
   function limits(){
@@ -131,8 +134,10 @@
     return {from:start,to:end,limit:Math.min(1500,Math.ceil((end-start)/intervalMs)+4)};
   }
   function makeUrl(){const window=limits();return `${apiBase}/api/v1/compare?${new URLSearchParams({left_venue:refs.leftVenue.value,left_market:refs.leftMarket.value.trim(),right_venue:refs.rightVenue.value,right_market:refs.rightMarket.value.trim(),interval:state.interval,from:String(window.from),to:String(window.to),limit:String(window.limit),scale:String(basisPointScale)})}`}
+  function showComparisonError(message,dataError=false){state.data=null;refs.run.disabled=false;refs.loading.hidden=true;refs.empty.hidden=false;refs.empty.querySelector('strong').textContent='Comparison unavailable';refs.empty.querySelector('p').textContent=message;refs.chartPair.textContent=`${refs.leftMarket.value.trim()} / ${refs.rightMarket.value.trim()}`;refs.chartSubtitle.textContent=message;refs.alignment.textContent='Choose markets with the same normalized base asset';[metrics.latest,metrics.mean,metrics.sigma,metrics.z,metrics.range,refs.upper,refs.lower,refs.exitWindow].forEach(element=>element.textContent='—');metrics.direction.textContent='No basis signal';metrics.signal.textContent='CHECK PAIR';refs.observations.replaceChildren();draw();if(dataError){refs.healthDot.className='error';refs.healthLabel.textContent='Data error'}toast(message)}
   async function compare(silent=false){
     if(!refs.leftMarket.value.trim()||!refs.rightMarket.value.trim())return toast('Choose both markets');
+    const validationError=pairValidationError();if(validationError){state.abort?.abort();showComparisonError(validationError);return}
     state.abort?.abort();state.abort=new AbortController();state.requestUrl=makeUrl();
     refs.run.disabled=true;if(!silent){refs.loading.hidden=false;refs.empty.hidden=true}
     try {
@@ -141,7 +146,7 @@
       if(!response.ok)throw new Error(body.error?.message||`Request failed (${response.status})`);
       state.data=body;state.visible=Math.min(body.candles.length,Math.max(80,Math.round(refs.wrap.clientWidth/7)));state.offset=0;state.hover=-1;
       updateUrl();renderData();refs.healthDot.className='online';refs.healthLabel.textContent='Live';
-    } catch(error) {if(error.name==='AbortError')return;state.data=null;refs.empty.hidden=false;refs.empty.querySelector('strong').textContent='Comparison unavailable';refs.empty.querySelector('p').textContent=error.message;refs.chartSubtitle.textContent=error.message;refs.alignment.textContent='Choose markets with the same normalized base asset';[metrics.latest,metrics.mean,metrics.sigma,metrics.z,metrics.range,refs.upper,refs.lower,refs.exitWindow].forEach(element=>element.textContent='—');metrics.direction.textContent='No basis signal';metrics.signal.textContent='CHECK PAIR';refs.observations.replaceChildren();draw();refs.healthDot.className='error';refs.healthLabel.textContent='Data error';toast(error.message)}
+    } catch(error) {if(error.name==='AbortError')return;showComparisonError(error.message,true)}
     finally {refs.loading.hidden=true;refs.run.disabled=false}
   }
   function updateUrl(){const params=new URLSearchParams({left_venue:refs.leftVenue.value,left_market:refs.leftMarket.value.trim(),right_venue:refs.rightVenue.value,right_market:refs.rightMarket.value.trim(),interval:state.interval,range:String(state.range)});if(configuredApiBase)params.set('api_base',configuredApiBase);if(staticPreview)params.set('static_demo','1');history.replaceState(null,'',`${location.pathname}?${params}`)}
