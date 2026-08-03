@@ -1,5 +1,6 @@
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
+use futures::future::join_all;
 use moka::future::Cache;
 use reqwest::Client;
 
@@ -7,15 +8,19 @@ use crate::{
     adapters,
     error::AppError,
     model::{
-        Candle, CandleRequest, ComparisonCandle, ComparisonResponse, ComparisonStats, Market, Venue,
+        Candle, CandleRequest, ComparisonCandle, ComparisonResponse, ComparisonStats, Market,
+        TickerListing, Venue,
     },
 };
+
+pub const TICKER_CACHE_TTL_SECONDS: u64 = 300;
 
 #[derive(Clone)]
 pub struct MarketDataService {
     client: Client,
     candle_cache: Cache<CandleRequest, Arc<Vec<Candle>>>,
     market_cache: Cache<Venue, Arc<Vec<Market>>>,
+    ticker_cache: Cache<(), Arc<Vec<TickerListing>>>,
 }
 
 impl MarketDataService {
@@ -38,7 +43,11 @@ impl MarketDataService {
                 .build(),
             market_cache: Cache::builder()
                 .max_capacity(Venue::ALL.len() as u64)
-                .time_to_live(Duration::from_secs(300))
+                .time_to_live(Duration::from_secs(TICKER_CACHE_TTL_SECONDS))
+                .build(),
+            ticker_cache: Cache::builder()
+                .max_capacity(1)
+                .time_to_live(Duration::from_secs(TICKER_CACHE_TTL_SECONDS))
                 .build(),
         }
     }
@@ -61,6 +70,51 @@ impl MarketDataService {
         self.market_cache
             .try_get_with(venue, async move {
                 adapters::fetch_markets(&client, venue).await.map(Arc::new)
+            })
+            .await
+            .map_err(|error| error.as_ref().clone())
+    }
+
+    pub async fn tickers(&self) -> Result<Arc<Vec<TickerListing>>, AppError> {
+        let service = self.clone();
+        self.ticker_cache
+            .try_get_with((), async move {
+                let results = join_all(Venue::ALL.into_iter().map(|venue| {
+                    let service = service.clone();
+                    async move { (venue, service.markets(venue).await) }
+                }))
+                .await;
+
+                let mut tickers = Vec::new();
+                let mut first_error = None;
+                for (venue, result) in results {
+                    match result {
+                        Ok(markets) => tickers.extend(
+                            markets
+                                .iter()
+                                .filter(|market| market.active)
+                                .map(|market| TickerListing::from_market(venue, market)),
+                        ),
+                        Err(error) if first_error.is_none() => first_error = Some(error),
+                        Err(_) => {}
+                    }
+                }
+                if tickers.is_empty() {
+                    return Err(first_error.unwrap_or(AppError::Upstream {
+                        venue: "ticker_catalog".into(),
+                        message: "no venue catalogs were available".into(),
+                    }));
+                }
+                tickers.sort_unstable_by(|left, right| {
+                    left.normalized_symbol
+                        .cmp(&right.normalized_symbol)
+                        .then_with(|| left.venue.cmp(right.venue))
+                        .then_with(|| left.symbol.cmp(&right.symbol))
+                });
+                tickers.dedup_by(|left, right| {
+                    left.venue == right.venue && left.symbol == right.symbol
+                });
+                Ok(Arc::new(tickers))
             })
             .await
             .map_err(|error| error.as_ref().clone())

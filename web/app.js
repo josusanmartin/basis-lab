@@ -4,7 +4,7 @@
   const $ = (selector) => document.querySelector(selector);
   const refs = {
     leftVenue: $('#left-venue'), rightVenue: $('#right-venue'), leftMarket: $('#left-market'), rightMarket: $('#right-market'),
-    leftMarkets: $('#left-markets'), rightMarkets: $('#right-markets'), run: $('#run'), swap: $('#swap'), formula: $('#formula'),
+    leftMarkets: $('#left-market-options'), rightMarkets: $('#right-market-options'), run: $('#run'), swap: $('#swap'), formula: $('#formula'),
     intervals: $('#intervals'), ranges: $('#ranges'), copyApi: $('#copy-api'), canvas: $('#chart'), wrap: $('#chart-wrap'),
     tooltip: $('#chart-tooltip'), loading: $('#chart-loading'), empty: $('#chart-empty'), healthDot: $('#health-dot'),
     healthLabel: $('#health-label'), chartPair: $('#chart-pair'), chartSubtitle: $('#chart-subtitle'), observations: $('#observations-body'),
@@ -26,6 +26,7 @@
   const staticPreview = query.get('static_demo') === '1';
   const apiBase = (configuredApiBase || (hostedPreview ? hostedApiBase : location.origin)).replace(/\/$/,'');
   const state = {venues:fallbackVenues,interval:'1h',range:7,data:null,requestUrl:'',abort:null,visible:160,offset:0,hover:-1,drag:null,refreshTimer:null};
+  const marketSearch = {left:{timer:null,abort:null,sequence:0,active:-1,items:[],open:false},right:{timer:null,abort:null,sequence:0,active:-1,items:[],open:false}};
   const metrics = {latest:$('#metric-latest'),mean:$('#metric-mean'),sigma:$('#metric-sigma'),z:$('#metric-z'),range:$('#metric-range'),direction:$('#metric-direction'),signal:$('#metric-signal')};
 
   function option(value,label){const element=document.createElement('option');element.value=value;element.textContent=label;return element}
@@ -62,8 +63,10 @@
   function bind(){
     refs.run.addEventListener('click',()=>compare());
     document.addEventListener('keydown',event=>{if(event.key==='Enter'&&document.activeElement?.tagName!=='BUTTON')compare()});
-    [refs.leftVenue,refs.rightVenue].forEach((select,index)=>select.addEventListener('change',()=>{const side=index?'right':'left',market=index?refs.rightMarket:refs.leftMarket;market.value=defaultSymbols[select.value]||'BTCUSDT';renderIntervals();loadMarkets(side)}));
-    refs.swap.addEventListener('click',()=>{[refs.leftVenue.value,refs.rightVenue.value]=[refs.rightVenue.value,refs.leftVenue.value];[refs.leftMarket.value,refs.rightMarket.value]=[refs.rightMarket.value,refs.leftMarket.value];renderIntervals();loadMarkets('left');loadMarkets('right');compare()});
+    bindMarketPicker('left');bindMarketPicker('right');
+    document.addEventListener('pointerdown',event=>{if(!event.target.closest('.market-field')){closeMarketMenu('left');closeMarketMenu('right')}});
+    [refs.leftVenue,refs.rightVenue].forEach((select,index)=>select.addEventListener('change',()=>{const side=index?'right':'left',market=index?refs.rightMarket:refs.leftMarket;market.value=defaultSymbols[select.value]||'BTCUSDT';closeMarketMenu(side);renderIntervals();loadMarkets(side)}));
+    refs.swap.addEventListener('click',()=>{[refs.leftVenue.value,refs.rightVenue.value]=[refs.rightVenue.value,refs.leftVenue.value];[refs.leftMarket.value,refs.rightMarket.value]=[refs.rightMarket.value,refs.leftMarket.value];closeMarketMenu('left');closeMarketMenu('right');renderIntervals();loadMarkets('left');loadMarkets('right');compare()});
     refs.intervals.addEventListener('click',event=>{const button=event.target.closest('button:not(:disabled)');if(!button)return;state.interval=button.dataset.interval;renderIntervals();compare()});
     refs.ranges.addEventListener('click',event=>{const button=event.target.closest('button');if(!button)return;state.range=Number(button.dataset.range);refs.ranges.querySelectorAll('button').forEach(b=>b.classList.toggle('active',b===button));compare()});
     refs.copyApi.addEventListener('click',async()=>{try{await navigator.clipboard.writeText(state.requestUrl);toast('API URL copied')}catch{toast('Copy unavailable')}});
@@ -71,12 +74,48 @@
     refs.resetBands.addEventListener('click',()=>{refs.entryZ.value='2';refs.exitZ.value='.25';updateBands();draw()});
     addChartInteractions();
     new ResizeObserver(draw).observe(refs.wrap);
-    window.addEventListener('beforeunload',()=>{state.abort?.abort();clearInterval(state.refreshTimer)},{once:true});
+    window.addEventListener('beforeunload',()=>{state.abort?.abort();marketSearch.left.abort?.abort();marketSearch.right.abort?.abort();clearInterval(state.refreshTimer)},{once:true});
   }
-  async function loadMarkets(side){
-    if(staticPreview)return;
-    const select=side==='left'?refs.leftVenue:refs.rightVenue,input=side==='left'?refs.leftMarket:refs.rightMarket,list=side==='left'?refs.leftMarkets:refs.rightMarkets;
-    try {const q=new URLSearchParams({venue:select.value,query:input.value.replace(/[_-]?(USDT|USD|SWAP|P)$/i,''),limit:'100'});const response=await fetchApi(`${apiBase}/api/v1/markets?${q}`);if(!response.ok)return;const data=(await response.json()).data;list.replaceChildren(...data.map(m=>option(m.symbol,m.symbol)))} catch {}
+  function marketPicker(side){return {select:side==='left'?refs.leftVenue:refs.rightVenue,input:side==='left'?refs.leftMarket:refs.rightMarket,list:side==='left'?refs.leftMarkets:refs.rightMarkets,search:marketSearch[side]}}
+  function bindMarketPicker(side){
+    const {input,list,search}=marketPicker(side);
+    input.addEventListener('focus',()=>loadMarkets(side,true,''));
+    input.addEventListener('input',()=>{clearTimeout(search.timer);search.timer=setTimeout(()=>loadMarkets(side,true,input.value.trim()),140)});
+    input.addEventListener('keydown',event=>{
+      if(event.key==='ArrowDown'||event.key==='ArrowUp'){
+        event.preventDefault();
+        if(!search.open){openMarketMenu(side);if(!search.items.length)loadMarkets(side,true,'');}
+        const delta=event.key==='ArrowDown'?1:-1,index=search.active<0?(delta>0?0:search.items.length-1):(search.active+delta+search.items.length)%Math.max(1,search.items.length);setActiveMarket(side,index);return;
+      }
+      if(event.key==='Enter'&&search.open){event.preventDefault();event.stopPropagation();if(search.items.length)selectMarket(side,search.active<0?0:search.active);return}
+      if(event.key==='Escape'&&search.open){event.preventDefault();closeMarketMenu(side)}
+    });
+    list.addEventListener('pointerdown',event=>event.preventDefault());
+    list.addEventListener('click',event=>{const row=event.target.closest('.market-option');if(row)selectMarket(side,Number(row.dataset.index))});
+  }
+  function openMarketMenu(side){const {input,list,search}=marketPicker(side);search.open=true;list.hidden=false;input.setAttribute('aria-expanded','true')}
+  function closeMarketMenu(side){const {input,list,search}=marketPicker(side);search.open=false;search.active=-1;list.hidden=true;input.setAttribute('aria-expanded','false');input.removeAttribute('aria-activedescendant')}
+  function setActiveMarket(side,index){
+    const {input,list,search}=marketPicker(side),rows=[...list.querySelectorAll('.market-option')];
+    if(!rows.length){search.active=-1;return}
+    search.active=Math.max(0,Math.min(index,rows.length-1));
+    rows.forEach((row,rowIndex)=>{const active=rowIndex===search.active;row.classList.toggle('active',active);row.setAttribute('aria-selected',String(active))});
+    input.setAttribute('aria-activedescendant',rows[search.active].id);rows[search.active].scrollIntoView({block:'nearest'});
+  }
+  function selectMarket(side,index){const {input,search}=marketPicker(side),market=search.items[index];if(!market)return;input.value=market.symbol;closeMarketMenu(side);input.focus()}
+  function marketMessage(list,message){const row=document.createElement('div');row.className='market-option-state';row.setAttribute('role','option');row.setAttribute('aria-disabled','true');row.textContent=message;list.replaceChildren(row)}
+  function renderMarketOptions(side,items){
+    const {list,search}=marketPicker(side);search.items=items;search.active=-1;
+    if(!items.length){marketMessage(list,'No matching markets');return}
+    list.replaceChildren(...items.map((market,index)=>{const row=document.createElement('button'),primary=document.createElement('strong'),native=document.createElement('span');row.type='button';row.id=`${side}-market-option-${index}`;row.className='market-option';row.dataset.index=String(index);row.setAttribute('role','option');row.setAttribute('aria-selected','false');primary.textContent=market.normalized_symbol||market.symbol;native.textContent=market.symbol===market.normalized_symbol?'Native symbol':market.symbol;row.append(primary,native);return row}));
+  }
+  async function loadMarkets(side,open=false,term){
+    const {select,input,list,search}=marketPicker(side);if(open)openMarketMenu(side);
+    if(staticPreview){renderMarketOptions(side,[{symbol:input.value,normalized_symbol:input.value}]);return}
+    search.abort?.abort();search.abort=new AbortController();const sequence=++search.sequence,query=term??input.value.trim();
+    if(open)marketMessage(list,'Searching cached tickers…');
+    try {const q=new URLSearchParams({venue:select.value,query,limit:'100'}),response=await fetchApi(`${apiBase}/api/v1/markets?${q}`,{signal:search.abort.signal,headers:{Accept:'application/json'}});if(!response.ok)throw new Error();const data=(await response.json()).data;if(sequence!==search.sequence)return;renderMarketOptions(side,data);if(search.open)openMarketMenu(side)}
+    catch(error){if(error.name==='AbortError')return;if(sequence===search.sequence){marketMessage(list,'Market search unavailable');if(search.open)openMarketMenu(side)}}
   }
   function limits(){
     const end=Date.now(),start=end-state.range*864e5;

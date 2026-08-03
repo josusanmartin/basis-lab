@@ -24,7 +24,9 @@ test.describe('deployed static preview', () => {
 
     const spec = await request.get(new URL('openapi.json', deployedBaseUrl).href);
     expect(spec.ok()).toBeTruthy();
-    expect((await spec.json()).paths['/api/v1/compare']).toBeTruthy();
+    const contract = await spec.json();
+    expect(contract.paths['/api/v1/compare']).toBeTruthy();
+    expect(contract.paths['/api/v1/tickers']).toBeTruthy();
 
     await page.goto(new URL('docs.html', deployedBaseUrl).href);
     await expect(page.getByRole('heading', { name: 'Basis Lab API' })).toBeVisible();

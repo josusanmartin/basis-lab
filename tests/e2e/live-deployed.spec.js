@@ -32,6 +32,13 @@ test.describe('deployed live Rust service', () => {
     expect(venues.ok()).toBeTruthy();
     expect((await venues.json()).data).toHaveLength(12);
 
+    const tickers = await request.get(new URL('/api/v1/tickers?query=WLFI%2FUSDT&limit=100', liveApiBaseUrl).href);
+    expect(tickers.ok()).toBeTruthy();
+    expect(tickers.headers()['cache-control']).toContain('stale-while-revalidate');
+    const tickerBody = await tickers.json();
+    expect(tickerBody.cache_ttl_seconds).toBe(300);
+    expect(tickerBody.data.some(ticker => ticker.normalized_symbol === 'WLFI/USDT')).toBeTruthy();
+
     const spec = await request.get(new URL('/openapi.json', liveApiBaseUrl).href);
     const contract = await spec.json();
     expect(contract.components.schemas.ComparisonResponse.required).toContain('candles');

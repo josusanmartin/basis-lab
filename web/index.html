@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#080a0e">
   <meta name="description" content="Compare premium and discount candles across crypto spot and perpetual venues.">
   <title>Basis Lab — Cross-venue premium explorer</title>
-  <link rel="stylesheet" href="./styles.css?v=0.1.3">
+  <link rel="stylesheet" href="./styles.css?v=0.1.4">
 </head>
 <body>
   <header class="site-header">
@@ -36,7 +36,11 @@
           <div class="leg-heading"><span class="leg-index">A</span><span>Numerator · long when discounted</span></div>
           <div class="leg-inputs">
             <label><span>Venue</span><select id="left-venue" aria-label="Left venue"></select></label>
-            <label class="market-field"><span>Market</span><input id="left-market" list="left-markets" autocomplete="off" spellcheck="false" aria-label="Left market"><datalist id="left-markets"></datalist></label>
+            <div class="market-field">
+              <label for="left-market"><span>Market</span></label>
+              <input id="left-market" autocomplete="off" spellcheck="false" aria-label="Left market" role="combobox" aria-autocomplete="list" aria-haspopup="listbox" aria-controls="left-market-options" aria-expanded="false">
+              <div id="left-market-options" class="market-options" role="listbox" aria-label="Left market results" hidden></div>
+            </div>
           </div>
         </div>
         <button id="swap" class="swap" type="button" title="Swap legs" aria-label="Swap comparison legs">⇄</button>
@@ -45,7 +49,11 @@
           <div class="leg-heading"><span class="leg-index">B</span><span>Denominator · short when discounted</span></div>
           <div class="leg-inputs">
             <label><span>Venue</span><select id="right-venue" aria-label="Right venue"></select></label>
-            <label class="market-field"><span>Market</span><input id="right-market" list="right-markets" autocomplete="off" spellcheck="false" aria-label="Right market"><datalist id="right-markets"></datalist></label>
+            <div class="market-field">
+              <label for="right-market"><span>Market</span></label>
+              <input id="right-market" autocomplete="off" spellcheck="false" aria-label="Right market" role="combobox" aria-autocomplete="list" aria-haspopup="listbox" aria-controls="right-market-options" aria-expanded="false">
+              <div id="right-market-options" class="market-options" role="listbox" aria-label="Right market results" hidden></div>
+            </div>
           </div>
         </div>
         <button id="run" class="run-button" type="button"><span>Run comparison</span><kbd>↵</kbd></button>
@@ -123,6 +131,6 @@
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <footer><span>Basis Lab</span><p>Market structure research, without the noise.</p><span id="version">v0.1.0</span></footer>
-  <script src="./app.js?v=0.1.3" defer></script>
+  <script src="./app.js?v=0.1.4" defer></script>
 </body>
 </html>

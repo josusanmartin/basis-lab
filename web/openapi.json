@@ -43,17 +43,41 @@
     "/api/v1/markets": {
       "get": {
         "operationId": "listMarkets",
-        "summary": "Discover active venue-native market symbols",
+        "summary": "Search a venue's cached native and normalized market symbols",
         "tags": ["Market data"],
         "parameters": [
           { "$ref": "#/components/parameters/Venue" },
-          { "name": "query", "in": "query", "description": "Case-insensitive symbol substring", "schema": { "type": "string", "default": "", "maxLength": 64 } },
+          { "name": "query", "in": "query", "description": "Case-insensitive native or normalized ticker search; separators are optional", "schema": { "type": "string", "default": "", "maxLength": 64 }, "example": "BTC/USDT" },
           { "name": "limit", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 1000, "default": 200 } }
         ],
         "responses": {
           "200": {
             "description": "Matching active markets",
             "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MarketsResponse" } } }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "502": { "$ref": "#/components/responses/UpstreamError" },
+          "503": { "$ref": "#/components/responses/Busy" },
+          "504": { "$ref": "#/components/responses/UpstreamTimeout" }
+        }
+      }
+    },
+    "/api/v1/tickers": {
+      "get": {
+        "operationId": "searchTickers",
+        "summary": "Search the cached normalized ticker catalog across venues",
+        "description": "Returns venue-native symbols alongside canonical BASE/QUOTE identities. The bounded catalog is coalesced and cached for five minutes.",
+        "tags": ["Market data"],
+        "parameters": [
+          { "name": "venue", "in": "query", "description": "Optional venue filter", "schema": { "$ref": "#/components/schemas/Venue" } },
+          { "name": "query", "in": "query", "description": "Case-insensitive ticker, asset, venue, or native-symbol search; separators are optional", "schema": { "type": "string", "default": "", "maxLength": 64 }, "example": "WLFI/USDT" },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 1000, "default": 200 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Matching cached ticker listings ranked by relevance",
+            "headers": { "Cache-Control": { "schema": { "type": "string" }, "description": "Public browser cache and stale-while-revalidate policy" } },
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TickersResponse" } } }
           },
           "400": { "$ref": "#/components/responses/BadRequest" },
           "502": { "$ref": "#/components/responses/UpstreamError" },
@@ -168,9 +192,10 @@
       "Market": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["symbol", "base", "quote", "active"],
+        "required": ["symbol", "normalized_symbol", "base", "quote", "active"],
         "properties": {
           "symbol": { "$ref": "#/components/schemas/MarketSymbol" },
+          "normalized_symbol": { "type": "string", "pattern": "^[A-Z0-9][A-Z0-9._:-]*(/[A-Z0-9][A-Z0-9._:-]*)?$", "example": "BTC/USDT" },
           "base": { "type": "string", "example": "BTC" },
           "quote": { "type": "string", "example": "USDT" },
           "active": { "type": "boolean" }
@@ -179,10 +204,39 @@
       "MarketsResponse": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["venue", "data"],
+        "required": ["venue", "query", "total", "cache_ttl_seconds", "data"],
         "properties": {
           "venue": { "$ref": "#/components/schemas/Venue" },
+          "query": { "type": "string" },
+          "total": { "type": "integer", "minimum": 0 },
+          "cache_ttl_seconds": { "type": "integer", "const": 300 },
           "data": { "type": "array", "items": { "$ref": "#/components/schemas/Market" } }
+        }
+      },
+      "TickerListing": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["normalized_symbol", "symbol", "base", "quote", "venue", "venue_label", "market_type"],
+        "properties": {
+          "normalized_symbol": { "type": "string", "example": "BTC/USDT" },
+          "symbol": { "$ref": "#/components/schemas/MarketSymbol" },
+          "base": { "type": "string", "example": "BTC" },
+          "quote": { "type": "string", "example": "USDT" },
+          "venue": { "$ref": "#/components/schemas/Venue" },
+          "venue_label": { "type": "string", "example": "Bybit Perpetual" },
+          "market_type": { "type": "string", "enum": ["spot", "perpetual"] }
+        }
+      },
+      "TickersResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["query", "venue", "total", "cache_ttl_seconds", "data"],
+        "properties": {
+          "query": { "type": "string" },
+          "venue": { "oneOf": [{ "$ref": "#/components/schemas/Venue" }, { "type": "null" }] },
+          "total": { "type": "integer", "minimum": 0 },
+          "cache_ttl_seconds": { "type": "integer", "const": 300 },
+          "data": { "type": "array", "items": { "$ref": "#/components/schemas/TickerListing" } }
         }
       },
       "Candle": {

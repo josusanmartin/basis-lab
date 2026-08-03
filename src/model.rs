@@ -198,6 +198,63 @@ pub struct Market {
     pub active: bool,
 }
 
+impl Market {
+    pub fn normalized_symbol(&self) -> String {
+        let base = self.base.trim().to_ascii_uppercase();
+        let quote = self.quote.trim().to_ascii_uppercase();
+        match (base.is_empty(), quote.is_empty()) {
+            (false, false) => format!("{base}/{quote}"),
+            (false, true) => base,
+            (true, false) => quote,
+            (true, true) => self.symbol.trim().to_ascii_uppercase(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct TickerListing {
+    pub normalized_symbol: String,
+    pub symbol: String,
+    pub base: String,
+    pub quote: String,
+    pub venue: &'static str,
+    pub venue_label: &'static str,
+    pub market_type: &'static str,
+}
+
+impl TickerListing {
+    pub fn from_market(venue: Venue, market: &Market) -> Self {
+        Self {
+            normalized_symbol: market.normalized_symbol(),
+            symbol: market.symbol.clone(),
+            base: market.base.trim().to_ascii_uppercase(),
+            quote: market.quote.trim().to_ascii_uppercase(),
+            venue: venue.id(),
+            venue_label: venue.label(),
+            market_type: venue.market_type(),
+        }
+    }
+
+    pub fn search_key(&self) -> String {
+        format!(
+            "{}{}{}{}{}",
+            compact_ticker(&self.normalized_symbol),
+            compact_ticker(&self.symbol),
+            compact_ticker(&self.base),
+            compact_ticker(&self.quote),
+            compact_ticker(self.venue_label),
+        )
+    }
+}
+
+pub fn compact_ticker(value: &str) -> String {
+    value
+        .bytes()
+        .filter(|byte| byte.is_ascii_alphanumeric())
+        .map(|byte| byte.to_ascii_uppercase() as char)
+        .collect()
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct VenueInfo {
     pub id: &'static str,
@@ -250,4 +307,25 @@ pub struct CandleRequest {
     pub from: i64,
     pub to: i64,
     pub limit: usize,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ticker_listing_preserves_native_symbol_and_adds_canonical_pair() {
+        let market = Market {
+            symbol: "BTC_USDT".into(),
+            base: "btc".into(),
+            quote: "usdt".into(),
+            active: true,
+        };
+        let ticker = TickerListing::from_market(Venue::MexcPerp, &market);
+        assert_eq!(ticker.symbol, "BTC_USDT");
+        assert_eq!(ticker.normalized_symbol, "BTC/USDT");
+        assert_eq!(ticker.venue, "mexc_perp");
+        assert!(ticker.search_key().contains("BTCUSDT"));
+        assert_eq!(compact_ticker(" btc-usdt.swap "), "BTCUSDTSWAP");
+    }
 }

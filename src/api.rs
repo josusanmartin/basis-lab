@@ -9,7 +9,7 @@ use axum::{
 };
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::json;
 use tokio::sync::Semaphore;
 use tower_http::{
     compression::CompressionLayer,
@@ -23,8 +23,10 @@ use tower_http::{
 
 use crate::{
     error::AppError,
-    model::{Candle, CandleRequest, Interval, Market, Venue, VenueInfo},
-    service::MarketDataService,
+    model::{
+        Candle, CandleRequest, Interval, Market, TickerListing, Venue, VenueInfo, compact_ticker,
+    },
+    service::{MarketDataService, TICKER_CACHE_TTL_SECONDS},
 };
 
 const MAX_LIMIT: usize = 1500;
@@ -57,6 +59,7 @@ pub fn router(state: AppState) -> Router {
         .route("/health", get(health))
         .route("/venues", get(venues))
         .route("/markets", get(markets))
+        .route("/tickers", get(tickers))
         .route("/candles", get(candles))
         .route("/compare", get(compare));
 
@@ -151,26 +154,165 @@ fn default_market_limit() -> usize {
 async fn markets(
     State(state): State<AppState>,
     Query(query): Query<MarketsQuery>,
-) -> Result<Json<Value>, AppError> {
+) -> Result<impl IntoResponse, AppError> {
     let venue = Venue::from_str(&query.venue)?;
-    if query.limit == 0 || query.limit > 1000 {
-        return Err(AppError::BadRequest(
-            "market limit must be between 1 and 1000".into(),
-        ));
-    }
+    validate_search(&query.query, query.limit)?;
     let _permit = acquire(&state).await?;
-    let needle = query.query.to_ascii_uppercase();
+    let needle = compact_ticker(&query.query);
     let cached = state.service.markets(venue).await?;
-    let markets: Vec<Market> = cached
+    let mut markets: Vec<MarketSearchResult> = cached
         .iter()
-        .filter(|market| {
-            market.active
-                && (needle.is_empty() || market.symbol.to_ascii_uppercase().contains(&needle))
-        })
-        .take(query.limit)
+        .filter(|market| market.active && market_matches(market, &needle))
+        .map(MarketSearchResult::from)
+        .collect();
+    markets.sort_unstable_by(|left, right| {
+        search_rank(&left.symbol, &left.normalized_symbol, &left.base, &needle)
+            .cmp(&search_rank(
+                &right.symbol,
+                &right.normalized_symbol,
+                &right.base,
+                &needle,
+            ))
+            .then_with(|| left.normalized_symbol.cmp(&right.normalized_symbol))
+            .then_with(|| left.symbol.cmp(&right.symbol))
+    });
+    let total = markets.len();
+    markets.truncate(query.limit);
+    Ok((
+        [(header::CACHE_CONTROL, ticker_cache_control())],
+        Json(json!({
+            "venue": venue.id(),
+            "query": query.query,
+            "total": total,
+            "cache_ttl_seconds": TICKER_CACHE_TTL_SECONDS,
+            "data": markets,
+        })),
+    ))
+}
+
+#[derive(Serialize)]
+struct MarketSearchResult {
+    symbol: String,
+    normalized_symbol: String,
+    base: String,
+    quote: String,
+    active: bool,
+}
+
+impl From<&Market> for MarketSearchResult {
+    fn from(market: &Market) -> Self {
+        Self {
+            symbol: market.symbol.clone(),
+            normalized_symbol: market.normalized_symbol(),
+            base: market.base.trim().to_ascii_uppercase(),
+            quote: market.quote.trim().to_ascii_uppercase(),
+            active: market.active,
+        }
+    }
+}
+
+#[derive(Deserialize)]
+struct TickersQuery {
+    venue: Option<String>,
+    #[serde(default)]
+    query: String,
+    #[serde(default = "default_market_limit")]
+    limit: usize,
+}
+
+async fn tickers(
+    State(state): State<AppState>,
+    Query(query): Query<TickersQuery>,
+) -> Result<impl IntoResponse, AppError> {
+    validate_search(&query.query, query.limit)?;
+    let venue = query.venue.as_deref().map(Venue::from_str).transpose()?;
+    let _permit = acquire(&state).await?;
+    let needle = compact_ticker(&query.query);
+    let cached = state.service.tickers().await?;
+    let mut matches: Vec<TickerListing> = cached
+        .iter()
+        .filter(|ticker| venue.is_none_or(|value| ticker.venue == value.id()))
+        .filter(|ticker| needle.is_empty() || ticker.search_key().contains(&needle))
         .cloned()
         .collect();
-    Ok(Json(json!({ "venue": venue.id(), "data": markets })))
+    matches.sort_unstable_by(|left, right| {
+        search_rank(&left.symbol, &left.normalized_symbol, &left.base, &needle)
+            .cmp(&search_rank(
+                &right.symbol,
+                &right.normalized_symbol,
+                &right.base,
+                &needle,
+            ))
+            .then_with(|| left.normalized_symbol.cmp(&right.normalized_symbol))
+            .then_with(|| left.venue.cmp(right.venue))
+            .then_with(|| left.symbol.cmp(&right.symbol))
+    });
+    let total = matches.len();
+    matches.truncate(query.limit);
+    Ok((
+        [(header::CACHE_CONTROL, ticker_cache_control())],
+        Json(json!({
+            "query": query.query,
+            "venue": venue.map(Venue::id),
+            "total": total,
+            "cache_ttl_seconds": TICKER_CACHE_TTL_SECONDS,
+            "data": matches,
+        })),
+    ))
+}
+
+fn validate_search(query: &str, limit: usize) -> Result<(), AppError> {
+    if limit == 0 || limit > 1000 {
+        return Err(AppError::BadRequest(
+            "ticker limit must be between 1 and 1000".into(),
+        ));
+    }
+    if query.len() > 64
+        || !query.is_ascii()
+        || query.bytes().any(|byte| byte.is_ascii_control())
+        || (!query.trim().is_empty() && compact_ticker(query).is_empty())
+    {
+        return Err(AppError::BadRequest(
+            "ticker query must be at most 64 printable ASCII characters and include a letter or number"
+                .into(),
+        ));
+    }
+    Ok(())
+}
+
+fn market_matches(market: &Market, needle: &str) -> bool {
+    let normalized = market.normalized_symbol();
+    needle.is_empty()
+        || [
+            market.symbol.as_str(),
+            market.base.as_str(),
+            market.quote.as_str(),
+            normalized.as_str(),
+        ]
+        .into_iter()
+        .any(|value| compact_ticker(value).contains(needle))
+}
+
+fn search_rank(symbol: &str, normalized: &str, base: &str, needle: &str) -> u8 {
+    if needle.is_empty() {
+        return 4;
+    }
+    let symbol = compact_ticker(symbol);
+    let normalized = compact_ticker(normalized);
+    let base = compact_ticker(base);
+    if symbol == needle || normalized == needle {
+        0
+    } else if base == needle {
+        1
+    } else if symbol.starts_with(needle) || normalized.starts_with(needle) {
+        2
+    } else {
+        3
+    }
+}
+
+fn ticker_cache_control() -> HeaderValue {
+    HeaderValue::from_static("public, max-age=30, stale-while-revalidate=300")
 }
 
 #[derive(Debug, Deserialize)]
@@ -337,6 +479,7 @@ async fn api_docs() -> Response {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::Value;
 
     #[test]
     fn market_validation_rejects_url_injection() {
@@ -355,8 +498,42 @@ mod tests {
     }
 
     #[test]
+    fn ticker_search_matches_canonical_and_native_notation() {
+        let market = Market {
+            symbol: "BTC-USDT-SWAP".into(),
+            base: "btc".into(),
+            quote: "usdt".into(),
+            active: true,
+        };
+        assert!(market_matches(&market, &compact_ticker("BTC/USDT")));
+        assert!(market_matches(&market, &compact_ticker("btc-usdt-swap")));
+        assert!(!market_matches(&market, &compact_ticker("ETH/USDT")));
+        assert_eq!(
+            search_rank(
+                &market.symbol,
+                &market.normalized_symbol(),
+                &market.base,
+                &compact_ticker("BTC/USDT"),
+            ),
+            0
+        );
+    }
+
+    #[test]
+    fn ticker_search_parameters_are_bounded() {
+        assert!(validate_search("WLFI/USDT", 100).is_ok());
+        assert!(validate_search("BTC\nUSDT", 100).is_err());
+        assert!(validate_search("币", 100).is_err());
+        assert!(validate_search("///", 100).is_err());
+        assert!(validate_search(&"x".repeat(65), 100).is_err());
+        assert!(validate_search("BTC", 0).is_err());
+        assert!(validate_search("BTC", 1001).is_err());
+    }
+
+    #[test]
     fn openapi_contract_covers_every_venue_and_comparison_field() {
         let spec: Value = serde_json::from_str(include_str!("../web/openapi.json")).unwrap();
+        assert!(spec.pointer("/paths/~1api~1v1~1tickers/get").is_some());
         let documented_venues = spec
             .pointer("/components/schemas/Venue/enum")
             .and_then(Value::as_array)
@@ -365,6 +542,16 @@ mod tests {
         for venue in Venue::ALL {
             assert!(documented_venues.iter().any(|value| value == venue.id()));
         }
+
+        let market_required = spec
+            .pointer("/components/schemas/Market/required")
+            .and_then(Value::as_array)
+            .unwrap();
+        assert!(
+            market_required
+                .iter()
+                .any(|value| value == "normalized_symbol")
+        );
 
         let required = spec
             .pointer("/components/schemas/ComparisonResponse/required")

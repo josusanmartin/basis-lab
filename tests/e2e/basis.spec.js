@@ -1,11 +1,20 @@
 const { test, expect } = require('@playwright/test');
 
 async function mockComparisonApi(page) {
-  await page.route('**/api/v1/markets?*', route => route.fulfill({
-    status: 200,
-    contentType: 'application/json',
-    body: JSON.stringify({ data: [] })
-  }));
+  await page.route('**/api/v1/markets?*', route => {
+    const query = new URL(route.request().url()).searchParams.get('query') || '';
+    const needle = query.replace(/[^a-z0-9]/gi, '').toUpperCase();
+    const markets = [
+      { symbol: 'WLFIUSDT', normalized_symbol: 'WLFI/USDT', base: 'WLFI', quote: 'USDT', active: true },
+      { symbol: 'BTCUSDT', normalized_symbol: 'BTC/USDT', base: 'BTC', quote: 'USDT', active: true },
+      { symbol: 'ETHUSDT', normalized_symbol: 'ETH/USDT', base: 'ETH', quote: 'USDT', active: true }
+    ].filter(market => `${market.symbol}${market.normalized_symbol}${market.base}${market.quote}`.replace(/[^a-z0-9]/gi, '').toUpperCase().includes(needle));
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ data: markets })
+    });
+  });
   await page.route('**/api/v1/compare?*', async route => {
     const requestUrl = new URL(route.request().url());
     const interval = requestUrl.searchParams.get('interval') || '1h';
@@ -106,6 +115,25 @@ test.describe('Basis Lab browser workflow', () => {
     await expect(page.locator('#health-label')).toHaveText('Live');
     await expect(page.locator('#chart-pair')).toHaveText('WLFIUSDT / WLFI_USDT');
     expect(venueAttempts).toBe(3);
+  });
+
+  test('searches normalized tickers and selects the native venue symbol', async ({ page }) => {
+    await mockComparisonApi(page);
+    await page.goto('/');
+
+    const input = page.locator('#left-market');
+    await input.focus();
+    await expect(page.locator('#left-market-options')).toBeVisible();
+    await expect(page.locator('#left-market-options .market-option')).toHaveCount(3);
+
+    await input.fill('btc/usdt');
+    await expect(page.locator('#left-market-options .market-option')).toHaveCount(1);
+    await expect(page.locator('#left-market-options .market-option strong')).toHaveText('BTC/USDT');
+    await expect(page.locator('#left-market-options .market-option span')).toHaveText('BTCUSDT');
+    await input.press('ArrowDown');
+    await input.press('Enter');
+    await expect(input).toHaveValue('BTCUSDT');
+    await expect(input).toHaveAttribute('aria-expanded', 'false');
   });
 
   test('exposes agent-facing API metadata and rejects unsafe inputs', async ({ request, page }) => {

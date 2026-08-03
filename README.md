@@ -73,11 +73,12 @@ Endpoints:
 
 - `GET /api/v1/health`
 - `GET /api/v1/venues`
-- `GET /api/v1/markets?venue=bybit_perp&query=WLFI&limit=100`
+- `GET /api/v1/markets?venue=bybit_perp&query=WLFI%2FUSDT&limit=100`
+- `GET /api/v1/tickers?query=WLFI%2FUSDT&limit=100`
 - `GET /api/v1/candles?venue=...&market=...&interval=...&from=...&to=...&limit=...`
 - `GET /api/v1/compare?left_venue=...&left_market=...&right_venue=...&right_market=...&interval=...&from=...&to=...&limit=...&scale=10000`
 
-Limits are enforced before upstream calls: 1,500 output candles, 366 calendar days, 20,000 source intervals, market identifiers up to 64 safe ASCII characters, a 12 MiB response cap, and a bounded concurrency queue. Successful source candles are cached for 15 seconds; market catalogs for five minutes. Both caches have fixed entry capacities.
+Limits are enforced before upstream calls: 1,500 output candles, 366 calendar days, 20,000 source intervals, market identifiers up to 64 safe ASCII characters, a 12 MiB response cap, and a bounded concurrency queue. Successful source candles are cached for 15 seconds; native and normalized ticker catalogs for five minutes. Searches match either venue notation (`BTC-USDT-SWAP`) or canonical notation (`BTC/USDT`) and are relevance-ranked. Every cache has a fixed entry capacity.
 
 ## Candle math
 

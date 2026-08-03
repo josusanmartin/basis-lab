@@ -2,7 +2,7 @@ use std::{env, net::SocketAddr};
 
 use basis_lab::{AppState, router};
 use tokio::net::TcpListener;
-use tracing::info;
+use tracing::{info, warn};
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
@@ -29,7 +29,16 @@ async fn main() {
         .expect("failed to bind server port");
     info!(%address, "Basis Lab listening");
 
-    axum::serve(listener, router(AppState::new(concurrency)))
+    let state = AppState::new(concurrency);
+    let catalog = state.service.clone();
+    tokio::spawn(async move {
+        match catalog.tickers().await {
+            Ok(tickers) => info!(tickers = tickers.len(), "Ticker cache warmed"),
+            Err(error) => warn!(%error, "Ticker cache warm-up was incomplete"),
+        }
+    });
+
+    axum::serve(listener, router(state))
         .with_graceful_shutdown(shutdown_signal())
         .await
         .expect("server failed");
