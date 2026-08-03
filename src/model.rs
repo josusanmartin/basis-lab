@@ -296,6 +296,10 @@ pub struct ComparisonCandle {
     pub close: f64,
     pub left_close: f64,
     pub right_close: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub left_volume: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub right_volume: Option<f64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]

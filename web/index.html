@@ -75,10 +75,10 @@
               <div class="chart-title"><span class="pulse-dot"></span><strong id="chart-pair">Waiting for markets</strong><span>· PREMIUM / DISCOUNT</span></div>
               <p id="chart-subtitle">Select two venues and run a comparison</p>
             </div>
-            <div class="legend"><span><i class="up"></i>Premium rising</span><span><i class="down"></i>Premium falling</span><span><i class="mean"></i>Mean</span></div>
+            <div class="legend"><span><i class="up"></i>Premium rising</span><span><i class="down"></i>Premium falling</span><span><i class="mean"></i>Mean</span><span id="volume-a-legend" hidden><i class="volume-a"></i>A volume</span><span id="volume-b-legend" hidden><i class="volume-b"></i>B volume</span></div>
           </div>
           <div id="chart-wrap" class="chart-wrap">
-            <canvas id="chart" role="img" aria-label="Premium discount candlestick chart"></canvas>
+            <canvas id="chart" role="img" aria-label="Premium discount candlestick chart with venue volume bars when available"></canvas>
             <div id="chart-tooltip" class="chart-tooltip" hidden></div>
             <div id="chart-loading" class="chart-loading"><span class="loader"></span><p>Aligning venue candles…</p></div>
             <div id="chart-empty" class="chart-empty" hidden><strong>No aligned candles</strong><p>Try a wider interval or confirm both symbols trade on the selected venues.</p></div>
@@ -123,6 +123,6 @@
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <footer><span>Basis Lab</span><p>Market structure research, without the noise.</p><span id="version">v0.1.0</span></footer>
-  <script src="./app.js?v=0.1.9" defer></script>
+  <script src="./app.js?v=0.2.0" defer></script>
 </body>
 </html>

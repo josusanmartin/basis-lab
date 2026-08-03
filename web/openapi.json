@@ -329,7 +329,9 @@
           "low": { "type": "number", "format": "double" },
           "close": { "type": "number", "format": "double" },
           "left_close": { "type": "number", "format": "double", "exclusiveMinimum": 0 },
-          "right_close": { "type": "number", "format": "double", "exclusiveMinimum": 0 }
+          "right_close": { "type": "number", "format": "double", "exclusiveMinimum": 0 },
+          "left_volume": { "type": "number", "format": "double", "minimum": 0, "description": "Venue A base-asset volume when supplied by the venue" },
+          "right_volume": { "type": "number", "format": "double", "minimum": 0, "description": "Venue B base-asset volume when supplied by the venue" }
         }
       },
       "ComparisonStats": {

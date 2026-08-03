@@ -179,6 +179,12 @@ pub fn compare_candles(
             close,
             left_close: a.close,
             right_close: b.close,
+            left_volume: a
+                .volume
+                .filter(|volume| volume.is_finite() && *volume >= 0.0),
+            right_volume: b
+                .volume
+                .filter(|volume| volume.is_finite() && *volume >= 0.0),
         });
     }
 
@@ -314,8 +320,28 @@ mod tests {
         );
         assert_eq!(result.scale, BASIS_POINT_SCALE);
         assert_eq!(result.unit, "bps");
+        assert_eq!(result.candles[0].left_volume, None);
+        assert_eq!(result.candles[0].right_volume, None);
         assert_eq!(result.dropped_left, 1);
         assert_eq!(result.dropped_right, 1);
+    }
+
+    #[test]
+    fn comparison_preserves_each_venues_volume_when_available() {
+        let mut left = candle(0, 102.0, 106.0, 100.0, 104.0);
+        left.volume = Some(125.5);
+        let mut right = candle(0, 100.0, 104.0, 98.0, 102.0);
+        right.volume = Some(98.25);
+        let result = compare_candles(
+            &request(Venue::BybitPerp),
+            &request(Venue::MexcPerp),
+            &[left],
+            &[right],
+            BASIS_POINT_SCALE,
+        )
+        .unwrap();
+        assert_eq!(result.candles[0].left_volume, Some(125.5));
+        assert_eq!(result.candles[0].right_volume, Some(98.25));
     }
 
     #[test]

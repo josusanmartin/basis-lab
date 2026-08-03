@@ -65,7 +65,9 @@ async function mockComparisonApi(page) {
         low: Math.min(open, close) - 4.2,
         close,
         left_close: 0.164 + index * 0.00001,
-        right_close: 0.1636 + index * 0.00001
+        right_close: 0.1636 + index * 0.00001,
+        left_volume: 1000 + index * 7,
+        right_volume: 800 + index * 5
       };
     });
     const closes = candles.map(candle => candle.close);
@@ -114,6 +116,8 @@ test.describe('Basis Lab browser workflow', () => {
     await expect(page.locator('#metric-latest')).not.toHaveText('—');
     await expect(page.locator('#upper-entry')).not.toHaveText('—');
     await expect(page.locator('#observations-body tr')).toHaveCount(12);
+    await expect(page.locator('#volume-a-legend')).toBeVisible();
+    await expect(page.locator('#volume-b-legend')).toBeVisible();
 
     const canvas = page.locator('#chart');
     const box = await canvas.boundingBox();
@@ -122,6 +126,8 @@ test.describe('Basis Lab browser workflow', () => {
     await canvas.hover({ position: { x: Math.round(box.width * 0.7), y: Math.round(box.height * 0.4) } });
     await expect(page.locator('#chart-tooltip')).toBeVisible();
     await expect(page.locator('#chart-tooltip')).toContainText('UTC');
+    await expect(page.locator('#chart-tooltip')).toContainText('A vol');
+    await expect(page.locator('#chart-tooltip')).toContainText('B vol');
 
     const previousBand = await page.locator('#upper-entry').textContent();
     await page.locator('#entry-z').fill('3');

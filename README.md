@@ -94,7 +94,7 @@ low   = (A.low   / B.high  - 1) × scale
 
 With `scale=10000`, values are basis points. Comparisons require matching canonical base assets; the suggestion endpoint ranks equivalent native symbols (including both the exact Hyperliquid `mkts:US500` match and the `xyz:SP500` index alias for Ondo `US500`) and flags contract-size aliases that need multiplier review. `SPX` remains distinct because it is not an S&P 500 index market on Hyperliquid. The high/low calculation is a conservative OHLC envelope, not a claim that venue extremes happened simultaneously. Deriving exact synthetic extremes would require synchronized trades or finer-grained bars. Only candles with identical normalized opening timestamps are joined; dropped counts are included in each response.
 
-The browser defaults to one-minute candles over 24 hours. Its 48- and 72-hour views load in daily chunks; longer one-minute selections show the latest 72 hours available. If a venue imposes a smaller upstream bar window, the adapter returns its newest supported subset instead of failing the comparison.
+The browser defaults to one-minute candles over 24 hours. Its 48- and 72-hour views load in daily chunks; longer one-minute selections show the latest 72 hours available. If a venue imposes a smaller upstream bar window, the adapter returns its newest supported subset instead of failing the comparison. When venues supply volume, the comparison preserves each side separately as `left_volume` and `right_volume`. Chart bar heights are normalized independently per venue within the visible window, while tooltips retain the raw values.
 
 ## Verification
 
