@@ -215,6 +215,27 @@ test.describe('Basis Lab browser workflow', () => {
     expect(comparisonRequests).toBe(1);
   });
 
+  test('falls back to known index markets when the deployed catalog is stale', async ({ page }) => {
+    await mockComparisonApi(page);
+    await page.route('**/api/v1/markets?*', async route => {
+      const requestUrl = new URL(route.request().url());
+      if (requestUrl.searchParams.get('venue') === 'hyperliquid_perp') {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [] }) });
+      }
+      await route.fallback();
+    });
+    await page.route('**/api/v1/tickers/suggest?*', route => route.fulfill({ status: 200, contentType: 'text/html', body: '<!doctype html><title>Old backend</title>' }));
+    await page.goto('/?left_venue=ondo_perp&left_market=US500-USD.P&right_venue=hyperliquid_perp&right_market=xyz%3ASP500');
+
+    await expect(page.locator('#metric-latest')).not.toHaveText('—');
+    const right = page.locator('#right-market');
+    await right.fill('SP500');
+    const options = page.locator('#right-market-options .market-option');
+    await expect(options).toHaveCount(2);
+    await expect(options.nth(0).locator('span')).toContainText('xyz:SP500');
+    await expect(options.nth(1).locator('span')).toContainText('mkts:US500');
+  });
+
   test('exposes agent-facing API metadata and rejects unsafe inputs', async ({ request, page }) => {
     const health = await request.get('/api/v1/health');
     expect(health.ok()).toBeTruthy();
