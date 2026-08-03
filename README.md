@@ -14,7 +14,7 @@ without downloading trades. A Rust service fetches venue candles concurrently, n
 
 ## Hosted preview
 
-The responsive public UI is published at <https://josusanmartin.com/basis-lab/> and uses the live Rust API at <https://basis-lab.onrender.com>. Use `?static_demo=1` for the labeled illustrative fallback, or `?api_base=https://your-api.example` to point the same UI at another deployment.
+The responsive public UI is published at <https://josusanmartin.com/basis-lab/> and uses the live Rust API at <https://basis-lab-sg.onrender.com>. Use `?static_demo=1` for the labeled illustrative fallback, or `?api_base=https://your-api.example` to point the same UI at another deployment.
 
 The Render service also hosts the complete UI and agent-callable API on one origin. Self-host with the included `render.yaml`, `fly.toml`, Dockerfile, or Compose service.
 

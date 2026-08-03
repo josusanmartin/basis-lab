@@ -13,7 +13,7 @@
   <p><a href="./">← Chart</a></p>
   <h1>Basis Lab API</h1>
   <p class="muted">A zero-auth, read-only API for normalized venue candles and cross-market basis candles. Times are Unix milliseconds. Responses are JSON.</p>
-  <p id="hosting-note" class="muted" hidden>The public chart uses the live Rust service at <a href="https://basis-lab.onrender.com">basis-lab.onrender.com</a>. The OpenAPI link below is a static copy of the same contract.</p>
+  <p id="hosting-note" class="muted" hidden>The public chart uses the live Rust service at <a href="https://basis-lab-sg.onrender.com">basis-lab-sg.onrender.com</a>. The OpenAPI link below is a static copy of the same contract.</p>
   <p><a href="./openapi.json">OpenAPI 3.1 specification</a></p>
   <section class="card"><div><span class="method">GET</span><span class="route">/api/v1/venues</span></div><p class="params">Venue identifiers, market types, and supported intervals.</p></section>
   <section class="card"><div><span class="method">GET</span><span class="route">/api/v1/markets</span></div><p class="params">venue, query?, limit?</p><pre>curl '<span class="origin"></span>/api/v1/markets?venue=bybit_perp&amp;query=WLFI'</pre></section>
@@ -24,7 +24,7 @@
   <h2>Operational limits</h2>
   <p>Maximum 1,500 returned candles, 366-day range, 20,000 source intervals, bounded 15-second cache, 12 MiB upstream response cap, and a two-second concurrency queue. Upstream exchange limits can be lower.</p>
 </main><script>
-const now=Date.now(),from=now-7*864e5,isPages=location.hostname.endsWith('.github.io')||location.hostname==='josusanmartin.com'||location.pathname.startsWith('/basis-lab/'),o=isPages?'https://basis-lab.onrender.com':location.origin;
+const now=Date.now(),from=now-7*864e5,isPages=location.hostname.endsWith('.github.io')||location.hostname==='josusanmartin.com'||location.pathname.startsWith('/basis-lab/'),o=isPages?'https://basis-lab-sg.onrender.com':location.origin;
 document.querySelector('#hosting-note').hidden=!isPages;
 document.querySelectorAll('.origin').forEach(x=>x.textContent=o);
 document.querySelector('#candles').textContent=`curl '${o}/api/v1/candles?venue=bybit_perp&market=BTCUSDT&interval=1h&from=${from}&to=${now}&limit=168'`;

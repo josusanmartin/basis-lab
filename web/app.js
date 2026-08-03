@@ -21,7 +21,7 @@
   const allIntervals = ['1m','3m','5m','15m','30m','1h','2h','4h','1d'];
   const query = new URLSearchParams(location.search);
   const configuredApiBase = query.get('api_base');
-  const hostedApiBase = 'https://basis-lab.onrender.com';
+  const hostedApiBase = 'https://basis-lab-sg.onrender.com';
   const hostedPreview = location.hostname.endsWith('.github.io') || location.hostname==='josusanmartin.com' || location.pathname.startsWith('/basis-lab/');
   const staticPreview = query.get('static_demo') === '1';
   const apiBase = (configuredApiBase || (hostedPreview ? hostedApiBase : location.origin)).replace(/\/$/,'');
