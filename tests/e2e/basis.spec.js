@@ -93,6 +93,21 @@ test.describe('Basis Lab browser workflow', () => {
     expect(pageErrors).toEqual([]);
   });
 
+  test('recovers from transient platform routing misses', async ({ page }) => {
+    let venueAttempts = 0;
+    await mockComparisonApi(page);
+    await page.route('**/api/v1/venues', async route => {
+      venueAttempts += 1;
+      if (venueAttempts < 3) return route.fulfill({ status: 404, body: 'Not Found' });
+      return route.continue();
+    });
+
+    await page.goto('/');
+    await expect(page.locator('#health-label')).toHaveText('Live');
+    await expect(page.locator('#chart-pair')).toHaveText('WLFIUSDT / WLFI_USDT');
+    expect(venueAttempts).toBe(3);
+  });
+
   test('exposes agent-facing API metadata and rejects unsafe inputs', async ({ request, page }) => {
     const health = await request.get('/api/v1/health');
     expect(health.ok()).toBeTruthy();

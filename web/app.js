@@ -38,13 +38,23 @@
   }
   function queryValue(name){return new URLSearchParams(location.search).get(name)}
   function venue(id){return state.venues.find(item=>item.id===id)||fallbackVenues.find(item=>item.id===id)}
+  async function fetchApi(url,options={}){
+    let response,lastError;
+    for(let attempt=0;attempt<5;attempt++){
+      try {response=await fetch(url,options);if(response.status!==404&&response.status<500)return response}
+      catch(error){if(error.name==='AbortError')throw error;lastError=error}
+      if(attempt<4)await new Promise(resolve=>setTimeout(resolve,250*(attempt+1)));
+      if(options.signal?.aborted)throw new DOMException('Aborted','AbortError');
+    }
+    if(response)return response;throw lastError;
+  }
   function renderIntervals(){
     const left=venue(refs.leftVenue.value)?.intervals||[],right=venue(refs.rightVenue.value)?.intervals||[];
     refs.intervals.replaceChildren(...allIntervals.map(name=>{const b=document.createElement('button');b.textContent=name.toUpperCase();b.dataset.interval=name;b.disabled=!left.includes(name)||!right.includes(name);b.classList.toggle('active',name===state.interval);return b}));
     if (refs.intervals.querySelector('.active:disabled')) {state.interval=[...refs.intervals.children].find(b=>!b.disabled)?.dataset.interval||'1h';renderIntervals()}
   }
   async function bootstrap(){
-    try {if(staticPreview)throw new Error();const response=await fetch(`${apiBase}/api/v1/venues`,{headers:{Accept:'application/json'}});if(!response.ok)throw new Error();state.venues=(await response.json()).data;refs.healthDot.className='online';refs.healthLabel.textContent='Live'}
+    try {if(staticPreview)throw new Error();const response=await fetchApi(`${apiBase}/api/v1/venues`,{headers:{Accept:'application/json'}});if(!response.ok)throw new Error();state.venues=(await response.json()).data;refs.healthDot.className='online';refs.healthLabel.textContent='Live'}
     catch {refs.healthDot.className=staticPreview?'preview':'error';refs.healthLabel.textContent=staticPreview?'Static demo':'API offline'}
     populateVenues(); bind(); loadMarkets('left');loadMarkets('right');await compare();
     state.refreshTimer=setInterval(()=>{if(!document.hidden)compare(true)},30000);
@@ -66,7 +76,7 @@
   async function loadMarkets(side){
     if(staticPreview)return;
     const select=side==='left'?refs.leftVenue:refs.rightVenue,input=side==='left'?refs.leftMarket:refs.rightMarket,list=side==='left'?refs.leftMarkets:refs.rightMarkets;
-    try {const q=new URLSearchParams({venue:select.value,query:input.value.replace(/[_-]?(USDT|USD|SWAP|P)$/i,''),limit:'100'});const response=await fetch(`${apiBase}/api/v1/markets?${q}`);if(!response.ok)return;const data=(await response.json()).data;list.replaceChildren(...data.map(m=>option(m.symbol,m.symbol)))} catch {}
+    try {const q=new URLSearchParams({venue:select.value,query:input.value.replace(/[_-]?(USDT|USD|SWAP|P)$/i,''),limit:'100'});const response=await fetchApi(`${apiBase}/api/v1/markets?${q}`);if(!response.ok)return;const data=(await response.json()).data;list.replaceChildren(...data.map(m=>option(m.symbol,m.symbol)))} catch {}
   }
   function limits(){
     const end=Date.now(),start=end-state.range*864e5;
@@ -80,7 +90,7 @@
     refs.run.disabled=true;if(!silent){refs.loading.hidden=false;refs.empty.hidden=true}
     try {
       if(staticPreview){state.data=previewData();state.visible=Math.min(state.data.candles.length,Math.max(80,Math.round(refs.wrap.clientWidth/7)));state.offset=0;state.hover=-1;updateUrl();renderData();refs.healthDot.className='preview';refs.healthLabel.textContent='Static demo';return}
-      const response=await fetch(state.requestUrl,{signal:state.abort.signal,headers:{Accept:'application/json'}});const body=await response.json().catch(()=>({}));
+      const response=await fetchApi(state.requestUrl,{signal:state.abort.signal,headers:{Accept:'application/json'}});const body=await response.json().catch(()=>({}));
       if(!response.ok)throw new Error(body.error?.message||`Request failed (${response.status})`);
       state.data=body;state.visible=Math.min(body.candles.length,Math.max(80,Math.round(refs.wrap.clientWidth/7)));state.offset=0;state.hover=-1;
       updateUrl();renderData();refs.healthDot.className='online';refs.healthLabel.textContent='Live';
