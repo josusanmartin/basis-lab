@@ -95,7 +95,7 @@ pub fn router(state: AppState) -> Router {
         .layer(SetResponseHeaderLayer::if_not_present(
             header::CONTENT_SECURITY_POLICY,
             HeaderValue::from_static(
-                "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; object-src 'none'; frame-ancestors 'none'; base-uri 'none'",
+                "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self' https://mainnet.zklighter.elliot.ai wss://stream.binance.com:9443 wss://fstream.binance.com wss://stream.bybit.com wss://api.hyperliquid.xyz wss://mainnet.zklighter.elliot.ai wss://fstream.asterdex.com wss://api.ondoperps.xyz wss://wbs-api.mexc.com wss://contract.mexc.com wss://ws.okx.com:8443; img-src 'self' data:; object-src 'none'; frame-ancestors 'none'; base-uri 'none'",
             ),
         ))
         .layer(

@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#080a0e">
   <meta name="description" content="Compare premium and discount candles across crypto spot and perpetual venues.">
   <title>Basis Lab — Cross-venue premium explorer</title>
-  <link rel="stylesheet" href="./styles.css?v=0.1.6">
+  <link rel="stylesheet" href="./styles.css?v=0.2.0">
 </head>
 <body>
   <header class="site-header">
@@ -57,6 +57,7 @@
           <button data-range="1" class="active">24H</button><button data-range="2">48H</button><button data-range="3">72H</button><button data-range="7">7D</button><button data-range="30">30D</button><button data-range="90">90D</button>
         </div>
         <div class="formula" id="formula">(A ÷ B − 1) × 10,000</div>
+        <button id="follow-live" class="live-button" type="button" aria-pressed="false"><i aria-hidden="true"></i><span>Follow live</span></button>
         <button id="copy-api" class="icon-button" type="button" title="Copy this API request"><span>API</span> ⧉</button>
       </div>
 
@@ -72,7 +73,7 @@
         <section class="chart-section">
           <div class="chart-heading">
             <div>
-              <div class="chart-title"><span class="pulse-dot"></span><strong id="chart-pair">Waiting for markets</strong><span>· PREMIUM / DISCOUNT</span></div>
+              <div class="chart-title"><span id="chart-pulse" class="pulse-dot"></span><strong id="chart-pair">Waiting for markets</strong><span>· PREMIUM / DISCOUNT</span></div>
               <p id="chart-subtitle">Select two venues and run a comparison</p>
             </div>
             <div class="legend"><span><i class="up"></i>Premium rising</span><span><i class="down"></i>Premium falling</span><span><i class="mean"></i>Mean</span><span id="volume-a-legend" hidden><i class="volume-a"></i>A volume</span><span id="volume-b-legend" hidden><i class="volume-b"></i>B volume</span></div>
@@ -122,7 +123,8 @@
   </main>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <footer><span>Basis Lab</span><p>Market structure research, without the noise.</p><span id="version">v0.1.0</span></footer>
-  <script src="./app.js?v=0.2.1" defer></script>
+  <footer><span>Basis Lab</span><p>Market structure research, without the noise.</p><span id="version">v0.3.0</span></footer>
+  <script src="./live-feeds.js?v=0.3.0" defer></script>
+  <script src="./app.js?v=0.3.0" defer></script>
 </body>
 </html>

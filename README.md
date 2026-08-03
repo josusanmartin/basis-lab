@@ -96,6 +96,8 @@ With `scale=10000`, values are basis points. Comparisons require matching canoni
 
 The browser defaults to one-minute candles over 24 hours. Its 48- and 72-hour views load in daily chunks; longer one-minute selections show the latest 72 hours available. If a venue imposes a smaller upstream bar window, the adapter returns its newest supported subset instead of failing the comparison. When venues supply volume, the comparison preserves each side separately as `left_volume` and `right_volume`. The chart uses separate stacked A and B volume panes, each normalized independently within the visible window, while tooltips retain the raw values.
 
+“Follow live” keeps that historical window as context, then opens the two venues' public WebSocket feeds in the browser. Incoming venue candles are normalized to the selected UTC interval and joined only when A and B have the same candle-opening timestamp; the current comparison candle, statistics, table, and independent volume panes update in place. Connections retry with exponential backoff and resubscribe after disconnects. Binance, Bybit, Hyperliquid (including HIP-3 symbols), Lighter, Aster, Ondo, MEXC, and OKX feeds are supported. Ondo's unauthenticated stream publishes mark-price ticks rather than trade candles, so its live OHLC is visibly labeled as mark-derived and does not invent volume. Binance perpetual also subscribes to BBO and transparently labels a midpoint-derived fallback if its kline channel is temporarily silent.
+
 ## Verification
 
 ```bash
@@ -107,7 +109,7 @@ npx playwright install chromium
 npm run test:e2e
 ```
 
-The deterministic E2E suite boots the Rust binary, loads a Bybit/MEXC WLFI fixture through the UI, validates chart and analytics output, swaps legs, changes intervals, checks the API documentation and static-preview fallback, and repeats core checks at a mobile viewport. Because venue adapters call external APIs, the 12-adapter live smoke matrix is intentionally separate from deterministic unit and browser tests.
+The deterministic E2E suite boots the Rust binary, loads a Bybit/MEXC WLFI fixture through the UI, validates chart and analytics output, simulates and aligns Hyperliquid/Ondo WebSocket updates, swaps legs, changes intervals, checks the API documentation and static-preview fallback, and repeats core checks at a mobile viewport. Because venue adapters call external APIs, the 12-adapter live smoke matrix is intentionally separate from deterministic unit and browser tests.
 
 ## Production notes
 

@@ -280,6 +280,62 @@ test.describe('Basis Lab browser workflow', () => {
     await expect(options.nth(1).locator('span')).toContainText('mkts:US500');
   });
 
+  test('follows and aligns two venue WebSocket feeds in real time', async ({ page }) => {
+    await page.addInitScript(() => {
+      window.__basisLiveSocketUrls = [];
+      class MockWebSocket {
+        static CONNECTING = 0;
+        static OPEN = 1;
+        static CLOSING = 2;
+        static CLOSED = 3;
+        constructor(url) {
+          this.url = url;
+          this.readyState = MockWebSocket.CONNECTING;
+          window.__basisLiveSocketUrls.push(url);
+          setTimeout(() => {
+            this.readyState = MockWebSocket.OPEN;
+            this.onopen?.({ type: 'open' });
+          });
+        }
+        send(payload) {
+          const message = JSON.parse(payload);
+          const time = Math.floor(Date.now() / 60_000) * 60_000;
+          if (this.url.includes('hyperliquid') && message.subscription?.type === 'candle') {
+            setTimeout(() => this.onmessage?.({ data: JSON.stringify({ channel: 'candle', data: { t: time, T: time + 59_999, s: 'xyz:SP500', i: '1m', o: '7537.5', c: '7539.7', h: '7540.1', l: '7537.2', v: '88.472' } }) }), 10);
+          }
+          if (this.url.includes('ondoperps') && message.op === 'subscribe') {
+            setTimeout(() => this.onmessage?.({ data: JSON.stringify({ type: 'update', channel: 'markPricesPerps', timestamp: new Date(time + 20_000).toISOString(), data: [{ market: 'US500-USD.P', markPrice: '7538.8', lastUpdatedTime: new Date(time + 20_000).toISOString() }] }) }), 15);
+          }
+        }
+        close() {
+          this.readyState = MockWebSocket.CLOSED;
+          this.onclose?.({ code: 1000 });
+        }
+      }
+      window.WebSocket = MockWebSocket;
+    });
+    await mockComparisonApi(page);
+    await page.goto('/?left_venue=hyperliquid_perp&left_market=xyz%3ASP500&right_venue=ondo_perp&right_market=US500-USD.P');
+    await expect(page.locator('#metric-latest')).not.toHaveText('—');
+
+    const follow = page.locator('#follow-live');
+    await follow.click();
+    await expect(follow).toHaveText('Stop live');
+    await expect(follow).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('#chart-subtitle')).toContainText('LIVE · WebSocket aligned');
+    await expect(page.locator('#chart-subtitle')).toContainText('B mark-derived');
+    await expect(page.locator('#health-label')).toHaveText('Following live');
+    await expect.poll(() => page.evaluate(() => window.__basisLiveSocketUrls)).toEqual([
+      'wss://api.hyperliquid.xyz/ws',
+      'wss://api.ondoperps.xyz/ws'
+    ]);
+
+    await follow.click();
+    await expect(follow).toHaveText('Follow live');
+    await expect(follow).toHaveAttribute('aria-pressed', 'false');
+    await expect(page.locator('#chart-subtitle')).not.toContainText('LIVE');
+  });
+
   test('exposes agent-facing API metadata and rejects unsafe inputs', async ({ request, page }) => {
     const health = await request.get('/api/v1/health');
     expect(health.ok()).toBeTruthy();
