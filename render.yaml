@@ -11,4 +11,3 @@ services:
       - key: MAX_UPSTREAM_CONCURRENCY
         value: "32"
     autoDeployTrigger: checksPass
-    maxShutdownDelaySeconds: 30

@@ -11,6 +11,7 @@ test.describe('deployed static preview', () => {
 
     const deployedPage = new URL(deployedBaseUrl);
     deployedPage.searchParams.set('qa', Date.now().toString());
+    deployedPage.searchParams.set('static_demo', '1');
     await page.goto(deployedPage.href);
     await expect(page).toHaveTitle(/Basis Lab/);
     await expect(page.locator('#health-label')).toHaveText('Static demo');

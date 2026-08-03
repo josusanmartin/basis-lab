@@ -1,4 +1,5 @@
 const { defineConfig, devices } = require('@playwright/test');
+const externalDeployment = process.env.LIVE_DEPLOYED_BASE_URL || process.env.DEPLOYED_BASE_URL;
 
 module.exports = defineConfig({
   testDir: './tests/e2e',
@@ -12,7 +13,7 @@ module.exports = defineConfig({
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure'
   },
-  webServer: {
+  webServer: externalDeployment ? undefined : {
     command: 'cargo run --release',
     url: 'http://127.0.0.1:8080/api/v1/health',
     reuseExistingServer: !process.env.CI,
@@ -24,4 +25,3 @@ module.exports = defineConfig({
     { name: 'mobile-chromium', use: { ...devices['Pixel 7'] } }
   ]
 });
-

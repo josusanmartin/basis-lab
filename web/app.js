@@ -19,9 +19,12 @@
   ].map(([id,label]) => ({id,label,intervals:['1m','5m','15m','30m','1h','4h','1d']}));
   const defaultSymbols = {hyperliquid_perp:'BTC',lighter_perp:'BTC',ondo_perp:'BTC-USD.P',mexc_perp:'BTC_USDT',okx_spot:'BTC-USDT',okx_perp:'BTC-USDT-SWAP'};
   const allIntervals = ['1m','3m','5m','15m','30m','1h','2h','4h','1d'];
-  const configuredApiBase = new URLSearchParams(location.search).get('api_base');
-  const staticPreview = (location.hostname.endsWith('.github.io') || location.hostname==='josusanmartin.com' || location.pathname.startsWith('/basis-lab/') || new URLSearchParams(location.search).get('static_demo')==='1') && !configuredApiBase;
-  const apiBase = configuredApiBase ? configuredApiBase.replace(/\/$/,'') : location.origin;
+  const query = new URLSearchParams(location.search);
+  const configuredApiBase = query.get('api_base');
+  const hostedApiBase = 'https://basis-lab.onrender.com';
+  const hostedPreview = location.hostname.endsWith('.github.io') || location.hostname==='josusanmartin.com' || location.pathname.startsWith('/basis-lab/');
+  const staticPreview = query.get('static_demo') === '1';
+  const apiBase = (configuredApiBase || (hostedPreview ? hostedApiBase : location.origin)).replace(/\/$/,'');
   const state = {venues:fallbackVenues,interval:'1h',range:7,data:null,requestUrl:'',abort:null,visible:160,offset:0,hover:-1,drag:null,refreshTimer:null};
   const metrics = {latest:$('#metric-latest'),mean:$('#metric-mean'),sigma:$('#metric-sigma'),z:$('#metric-z'),range:$('#metric-range'),direction:$('#metric-direction'),signal:$('#metric-signal')};
 
@@ -84,7 +87,7 @@
     } catch(error) {if(error.name==='AbortError')return;refs.empty.hidden=false;refs.empty.querySelector('strong').textContent='Comparison unavailable';refs.empty.querySelector('p').textContent=error.message;refs.healthDot.className='error';refs.healthLabel.textContent='Data error';toast(error.message)}
     finally {refs.loading.hidden=true;refs.run.disabled=false}
   }
-  function updateUrl(){const params=new URLSearchParams({left_venue:refs.leftVenue.value,left_market:refs.leftMarket.value.toUpperCase(),right_venue:refs.rightVenue.value,right_market:refs.rightMarket.value.toUpperCase(),interval:state.interval,range:String(state.range)});if(configuredApiBase)params.set('api_base',configuredApiBase);history.replaceState(null,'',`${location.pathname}?${params}`)}
+  function updateUrl(){const params=new URLSearchParams({left_venue:refs.leftVenue.value,left_market:refs.leftMarket.value.toUpperCase(),right_venue:refs.rightVenue.value,right_market:refs.rightMarket.value.toUpperCase(),interval:state.interval,range:String(state.range)});if(configuredApiBase)params.set('api_base',configuredApiBase);if(staticPreview)params.set('static_demo','1');history.replaceState(null,'',`${location.pathname}?${params}`)}
   function previewData(){
     const {from,to,limit}=limits(),step={'1m':6e4,'3m':18e4,'5m':3e5,'15m':9e5,'30m':18e5,'1h':36e5,'2h':72e5,'4h':144e5,'1d':864e5}[state.interval],count=Math.min(limit,220),seed=[...`${refs.leftVenue.value}:${refs.leftMarket.value}:${refs.rightVenue.value}:${refs.rightMarket.value}`].reduce((sum,char)=>sum+char.charCodeAt(0),0),end=Math.floor(to/step)*step;
     const candles=Array.from({length:count},(_,index)=>{const time=Math.max(from,end-(count-1-index)*step),center=Math.sin((index+seed)/11)*18+Math.cos((index+seed)/29)*7,open=center+Math.sin(index*.73)*3,close=center+Math.cos(index*.51)*3.2,leftClose=1+seed/10000+index/100000;return {time,open,high:Math.max(open,close)+4.4,low:Math.min(open,close)-4.4,close,left_close:leftClose,right_close:leftClose/(1+close/10000)}}),closes=candles.map(c=>c.close),mean=closes.reduce((a,b)=>a+b,0)/closes.length,variance=closes.reduce((sum,value)=>sum+(value-mean)**2,0)/closes.length,standard_deviation=Math.sqrt(variance),latest=closes.at(-1);
