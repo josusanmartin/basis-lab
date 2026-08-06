@@ -160,7 +160,7 @@ async fn markets(
     let venue = Venue::from_str(&query.venue)?;
     validate_search(&query.query, query.limit)?;
     let _permit = acquire(&state).await?;
-    let needle = compact_ticker(&query.query);
+    let needle = market_search_needle(&query.query);
     let cached = state.service.markets(venue).await?;
     let mut markets: Vec<MarketSearchResult> = cached
         .iter()
@@ -412,6 +412,13 @@ fn market_matches(market: &Market, needle: &str) -> bool {
         ]
         .into_iter()
         .any(|value| compact_ticker(value).contains(needle))
+}
+
+fn market_search_needle(query: &str) -> String {
+    match compact_ticker(query).as_str() {
+        "SPACEX" => "SPCX".into(),
+        compact => compact.into(),
+    }
 }
 
 fn search_rank(symbol: &str, normalized: &str, base: &str, needle: &str) -> u8 {
@@ -675,6 +682,14 @@ mod tests {
             ),
             0
         );
+        assert_eq!(market_search_needle("SpaceX"), "SPCX");
+        let spacex = Market {
+            symbol: "SPCXUSDT".into(),
+            base: "SPCX".into(),
+            quote: "USDT".into(),
+            active: true,
+        };
+        assert!(market_matches(&spacex, &market_search_needle("SpaceX")));
     }
 
     #[test]

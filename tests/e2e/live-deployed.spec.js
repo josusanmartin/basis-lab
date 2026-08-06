@@ -43,6 +43,10 @@ test.describe('deployed live Rust service', () => {
     expect(hip3.ok()).toBeTruthy();
     expect((await hip3.json()).data.some(market => market.symbol === 'xyz:SPCX')).toBeTruthy();
 
+    const binanceTradFi = await request.get(new URL('/api/v1/markets?venue=binance_perp&query=SpaceX&limit=100', liveApiBaseUrl).href);
+    expect(binanceTradFi.ok()).toBeTruthy();
+    expect((await binanceTradFi.json()).data.some(market => market.symbol === 'SPCXUSDT')).toBeTruthy();
+
     const suggestions = await request.get(new URL('/api/v1/tickers/suggest?source_venue=ondo_perp&source_symbol=SPCX-USD.P&target_venue=hyperliquid_perp', liveApiBaseUrl).href);
     expect(suggestions.ok()).toBeTruthy();
     const suggestionBody = await suggestions.json();

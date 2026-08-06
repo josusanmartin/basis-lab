@@ -233,7 +233,7 @@ async fn binance_markets(
         .filter_map(|row| {
             let symbol = row["symbol"].as_str()?;
             let status = row["status"].as_str().unwrap_or_default();
-            let perpetual = row["contractType"].as_str().unwrap_or("PERPETUAL") == "PERPETUAL";
+            let perpetual = binance_perpetual_contract(row["contractType"].as_str());
             (perpetual || !futures).then(|| Market {
                 symbol: symbol.into(),
                 base: row["baseAsset"].as_str().unwrap_or_default().into(),
@@ -242,6 +242,13 @@ async fn binance_markets(
             })
         })
         .collect())
+}
+
+fn binance_perpetual_contract(contract_type: Option<&str>) -> bool {
+    matches!(
+        contract_type.unwrap_or("PERPETUAL"),
+        "PERPETUAL" | "TRADIFI_PERPETUAL"
+    )
 }
 
 fn infer_pair(symbol: &str) -> (String, String) {
@@ -922,6 +929,13 @@ mod tests {
         assert_eq!(markets[0].normalized_symbol(), "SPCX/USD");
         assert!(markets[0].active);
         assert!(!markets[1].active);
+    }
+
+    #[test]
+    fn binance_discovery_accepts_crypto_and_tradfi_perpetual_contracts() {
+        assert!(binance_perpetual_contract(Some("PERPETUAL")));
+        assert!(binance_perpetual_contract(Some("TRADIFI_PERPETUAL")));
+        assert!(!binance_perpetual_contract(Some("CURRENT_QUARTER")));
     }
 
     #[test]
