@@ -770,6 +770,33 @@ mod tests {
     }
 
     #[test]
+    fn anthropic_pre_ipo_markets_are_comparable_and_suggested() {
+        let left = [Market {
+            symbol: "io:ANTH".into(),
+            base: "ANTH".into(),
+            quote: "USD".into(),
+            active: true,
+        }];
+        let right = [Market {
+            symbol: "ANTHROPICUSDT".into(),
+            base: "ANTHROPIC".into(),
+            quote: "USDT".into(),
+            active: true,
+        }];
+        assert!(ensure_comparable_markets(&left, "io:ANTH", &right, "ANTHROPICUSDT").is_ok());
+        assert!(ensure_comparable_markets(&right, "anthropicusdt", &left, "io:anth").is_ok());
+        assert_eq!(
+            equivalence_match("ANTH", "ANTHROPIC"),
+            Some((1, 0.98, "known ticker alias", false))
+        );
+        assert_eq!(
+            equivalence_match("ANTHROPIC", "ANTH"),
+            Some((1, 0.98, "known ticker alias", false))
+        );
+        assert_eq!(equivalence_match("ANTH", "OPENAI"), None);
+    }
+
+    #[test]
     fn ticker_equivalence_prefers_exact_and_marks_contract_multipliers() {
         assert_eq!(
             equivalence_match("SPCX", "SPCX"),

@@ -262,6 +262,11 @@ pub fn canonical_asset(value: &str) -> String {
         "WETH" => "ETH".into(),
         "XDG" => "DOGE".into(),
         "US500" | "USA500" | "SPX500" => "SP500".into(),
+        // Entropy ANTH quotes market cap in billions; Aster ANTHROPIC uses
+        // one billion reference shares, so their pre-IPO price units are 1:1.
+        // https://docs.entropy.io/market-types/pre-ipo-perpetuals
+        // https://docs.asterdex.com/trading/perpetuals/pre-ipo-perpetuals
+        "ANTH" => "ANTHROPIC".into(),
         _ => compact,
     }
 }

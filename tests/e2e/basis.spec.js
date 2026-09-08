@@ -12,15 +12,20 @@ async function mockComparisonApi(page) {
       { symbol: 'ETHUSDT', normalized_symbol: 'ETH/USDT', base: 'ETH', quote: 'USDT', active: true }
     ];
     const venueMarkets = {
+      mexc_perp: defaultMarkets.map(market => ({ ...market, symbol: market.symbol.replace(/USDT$/, '_USDT') })),
       ondo_perp: [
         { symbol: 'SPCX-USD.P', normalized_symbol: 'SPCX/USD', base: 'SPCX', quote: 'USD', active: true },
         { symbol: 'US500-USD.P', normalized_symbol: 'US500/USD', base: 'US500', quote: 'USD', active: true },
         { symbol: 'BTC-USD.P', normalized_symbol: 'BTC/USD', base: 'BTC', quote: 'USD', active: true }
       ],
       hyperliquid_perp: [
+        { symbol: 'io:ANTH', normalized_symbol: 'ANTH/USD', base: 'ANTH', quote: 'USD', active: true },
         { symbol: 'SPX', normalized_symbol: 'SPX/USD', base: 'SPX', quote: 'USD', active: true },
         { symbol: 'xyz:SPCX', normalized_symbol: 'SPCX/USD', base: 'SPCX', quote: 'USD', active: true },
         { symbol: 'xyz:SP500', normalized_symbol: 'SP500/USD', base: 'SP500', quote: 'USD', active: true }
+      ],
+      aster_perp: [
+        { symbol: 'ANTHROPICUSDT', normalized_symbol: 'ANTHROPIC/USDT', base: 'ANTHROPIC', quote: 'USDT', active: true }
       ]
     };
     const markets = (venueMarkets[venue] || defaultMarkets).filter(market => `${market.symbol}${market.normalized_symbol}${market.base}${market.quote}`.replace(/[^a-z0-9]/gi, '').toUpperCase().includes(needle));
@@ -234,6 +239,45 @@ test.describe('Basis Lab browser workflow', () => {
     await page.locator('#run').click();
     await expect(page.locator('#formula')).toContainText('× 10,000');
     await expect(page.locator('#metric-latest')).not.toHaveText('—');
+  });
+
+  test('compares Anthropic aliases and resolves the typed Aster search to its native symbol', async ({ page }) => {
+    await mockComparisonApi(page);
+    await page.goto('/?left_venue=hyperliquid_perp&left_market=io%3AANTH&right_venue=aster_perp&right_market=ANTHROPICUSDT');
+    await expect(page.locator('#metric-latest')).not.toHaveText('—');
+
+    await page.locator('#right-market').fill('anth');
+    const request = page.waitForRequest(request => {
+      const url = new URL(request.url());
+      return url.pathname === '/api/v1/compare' && url.searchParams.get('right_market') === 'ANTHROPICUSDT';
+    });
+    await page.locator('#run').press('Enter');
+    await request;
+    await expect(page.locator('#right-market')).toHaveValue('ANTHROPICUSDT');
+    await expect(page.locator('#metric-latest')).not.toHaveText('—');
+    await expect(page.locator('#formula')).toContainText('Aster:ANTHROPICUSDT');
+
+    await page.locator('#swap').click();
+    await expect(page.locator('#chart-pair')).toHaveText('ANTHROPICUSDT / io:ANTH');
+    await expect(page.locator('#metric-latest')).not.toHaveText('—');
+  });
+
+  test('does not choose an arbitrary market for an ambiguous search', async ({ page }) => {
+    await mockComparisonApi(page);
+    await page.goto('/?left_venue=hyperliquid_perp&left_market=io%3AANTH&right_venue=aster_perp&right_market=ANTHROPICUSDT');
+    await expect(page.locator('#metric-latest')).not.toHaveText('—');
+    await page.route('**/api/v1/markets?*', async route => {
+      if (new URL(route.request().url()).searchParams.get('venue') !== 'aster_perp') return route.fallback();
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [
+        { symbol: 'ANTHROPICUSDT', base: 'ANTHROPIC', quote: 'USDT' },
+        { symbol: 'ANTHROPICUSD1', base: 'ANTHROPIC', quote: 'USD1' }
+      ] }) });
+    });
+    await page.locator('#right-market').fill('anth');
+    const request = page.waitForRequest('**/api/v1/compare?*');
+    await page.locator('#run').press('Enter');
+    expect(new URL((await request).url()).searchParams.get('right_market')).toBe('anth');
+    await expect(page.locator('#right-market')).toHaveValue('anth');
   });
 
   test('blocks SPX token comparisons against the S&P 500 index', async ({ page }) => {

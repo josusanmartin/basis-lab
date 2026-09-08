@@ -107,7 +107,7 @@
     rows.forEach((row,rowIndex)=>{const active=rowIndex===search.active;row.classList.toggle('active',active);row.setAttribute('aria-selected',String(active))});
     input.setAttribute('aria-activedescendant',rows[search.active].id);rows[search.active].scrollIntoView({block:'nearest'});
   }
-  function assetKey(value){const compact=String(value||'').replace(/[^a-z0-9]/gi,'').toUpperCase();return ({XBT:'BTC',WBTC:'BTC',WETH:'ETH',XDG:'DOGE',US500:'SP500',USA500:'SP500',SPX500:'SP500'})[compact]||compact}
+  function assetKey(value){const compact=String(value||'').replace(/[^a-z0-9]/gi,'').toUpperCase();return ({XBT:'BTC',WBTC:'BTC',WETH:'ETH',XDG:'DOGE',US500:'SP500',USA500:'SP500',SPX500:'SP500',ANTH:'ANTHROPIC'})[compact]||compact}
   function inferredBase(venueId,symbol){const native=String(symbol||'').trim();if(venueId==='hyperliquid_perp')return native.split(':').at(-1)||'';if(venueId==='ondo_perp')return native.replace(/-USD\.P$/i,'');return ''}
   function currentBase(side){const {select,input,search}=marketPicker(side),native=input.value.trim(),selected=search.selected;if(selected&&selected.symbol.toUpperCase()===native.toUpperCase())return selected.base;return inferredBase(select.value,native)}
   function indexMarkets(venueId){if(venueId==='hyperliquid_perp')return[{symbol:'mkts:US500',normalized_symbol:'US500/USD',base:'US500',quote:'USD',active:true,match_reason:'known S&P 500 market'},{symbol:'xyz:SP500',normalized_symbol:'SP500/USD',base:'SP500',quote:'USD',active:true,match_reason:'known S&P 500 market'}];if(venueId==='ondo_perp')return[{symbol:'US500-USD.P',normalized_symbol:'US500/USD',base:'US500',quote:'USD',active:true,match_reason:'known S&P 500 market'}];return[]}
@@ -134,8 +134,15 @@
     if(staticPreview){renderMarketOptions(side,[{symbol:input.value,normalized_symbol:input.value}]);return}
     search.abort?.abort();search.abort=new AbortController();const sequence=++search.sequence,query=term??input.value.trim();
     if(open)marketMessage(list,'Searching cached tickers…');
-    try {const q=new URLSearchParams({venue:select.value,query,limit:'100'}),response=await fetchApi(`${apiBase}/api/v1/markets?${q}`,{signal:search.abort.signal,headers:{Accept:'application/json'}});if(!response.ok)throw new Error();let data=(await response.json()).data;if(sequence!==search.sequence)return;if(!data.length)data=fallbackMarketResults(select.value,query);search.selected=data.find(market=>market.symbol.toUpperCase()===input.value.trim().toUpperCase())||null;renderMarketOptions(side,data);if(search.open)openMarketMenu(side)}
+    try {const q=new URLSearchParams({venue:select.value,query,limit:'100'}),response=await fetchApi(`${apiBase}/api/v1/markets?${q}`,{signal:search.abort.signal,headers:{Accept:'application/json'}});if(!response.ok)throw new Error();let data=(await response.json()).data;if(sequence!==search.sequence)return;if(!data.length)data=fallbackMarketResults(select.value,query);search.selected=data.find(market=>market.symbol.toUpperCase()===input.value.trim().toUpperCase())||null;renderMarketOptions(side,data);if(search.open)openMarketMenu(side);return data}
     catch(error){if(error.name==='AbortError')return;if(sequence===search.sequence){marketMessage(list,'Market search unavailable');if(search.open)openMarketMenu(side)}}
+  }
+  async function resolveComparisonMarket(side){
+    if(staticPreview)return;const {select,input,search}=marketPicker(side),native=input.value.trim(),venueId=select.value;
+    clearTimeout(search.timer);
+    if(search.selected?.symbol.toUpperCase()===native.toUpperCase()){input.value=search.selected.symbol;return}
+    const items=await loadMarkets(side,false,native);if(input.value.trim()!==native||select.value!==venueId||!items)return;
+    const market=search.selected||(items.length===1?items[0]:null);if(market){input.value=market.symbol;search.selected=market;closeMarketMenu(side)}
   }
   function intervalMilliseconds(){return{ '1m':6e4,'3m':18e4,'5m':3e5,'15m':9e5,'30m':18e5,'1h':36e5,'2h':72e5,'4h':144e5,'1d':864e5}[state.interval]}
   function limits(){const to=Date.now(),from=to-state.range*864e5,step=intervalMilliseconds();return{from,to,limit:Math.min(1500,Math.ceil((to-from)/step)+4)}}
@@ -179,6 +186,7 @@
   async function compare(silent=false){
     if(state.live.active)stopLive({silent:true});
     if(!refs.leftMarket.value.trim()||!refs.rightMarket.value.trim())return toast('Choose both markets');
+    await Promise.all([resolveComparisonMarket('left'),resolveComparisonMarket('right')]);
     const validationError=pairValidationError();if(validationError){state.abort?.abort();showComparisonError(validationError);return}
     state.abort?.abort();state.abort=new AbortController();const windows=comparisonWindows();state.requestUrl=makeUrl(windows[0]);
     refs.run.disabled=true;if(!silent){refs.loading.hidden=false;refs.empty.hidden=true}
