@@ -1,4 +1,5 @@
 const { test, expect } = require('@playwright/test');
+const hip3Aliases = [['io:OAI', 'OPENAI'], ['xyz:GOLD', 'XAU'], ['xyz:SILVER', 'XAG'], ['xyz:PLATINUM', 'XPT'], ['xyz:PALLADIUM', 'XPD'], ['xyz:COPPER', 'XCU']];
 
 async function mockComparisonApi(page) {
   await page.route('**/api/v1/markets?*', route => {
@@ -14,17 +15,20 @@ async function mockComparisonApi(page) {
     const venueMarkets = {
       mexc_perp: defaultMarkets.map(market => ({ ...market, symbol: market.symbol.replace(/USDT$/, '_USDT') })),
       ondo_perp: [
+        { symbol: 'COPPER-USD.P', normalized_symbol: 'COPPER/USD', base: 'COPPER', quote: 'USD', active: true },
         { symbol: 'SPCX-USD.P', normalized_symbol: 'SPCX/USD', base: 'SPCX', quote: 'USD', active: true },
         { symbol: 'US500-USD.P', normalized_symbol: 'US500/USD', base: 'US500', quote: 'USD', active: true },
         { symbol: 'BTC-USD.P', normalized_symbol: 'BTC/USD', base: 'BTC', quote: 'USD', active: true }
       ],
       hyperliquid_perp: [
+        ...hip3Aliases.map(([symbol]) => ({ symbol, base: symbol.split(':')[1], quote: 'USD', active: true })),
         { symbol: 'io:ANTH', normalized_symbol: 'ANTH/USD', base: 'ANTH', quote: 'USD', active: true },
         { symbol: 'SPX', normalized_symbol: 'SPX/USD', base: 'SPX', quote: 'USD', active: true },
         { symbol: 'xyz:SPCX', normalized_symbol: 'SPCX/USD', base: 'SPCX', quote: 'USD', active: true },
         { symbol: 'xyz:SP500', normalized_symbol: 'SP500/USD', base: 'SP500', quote: 'USD', active: true }
       ],
       aster_perp: [
+        ...hip3Aliases.map(([, base]) => ({ symbol: `${base}USDT`, base, quote: 'USDT', active: true })),
         { symbol: 'ANTHROPICUSDT', normalized_symbol: 'ANTHROPIC/USDT', base: 'ANTHROPIC', quote: 'USDT', active: true }
       ]
     };
@@ -260,6 +264,20 @@ test.describe('Basis Lab browser workflow', () => {
     await page.locator('#swap').click();
     await expect(page.locator('#chart-pair')).toHaveText('ANTHROPICUSDT / io:ANTH');
     await expect(page.locator('#metric-latest')).not.toHaveText('—');
+  });
+
+  test('compares verified HIP-3 aliases while preserving native request symbols', async ({ page }) => {
+    await mockComparisonApi(page);
+    for (const [symbol, base] of hip3Aliases) {
+      const request = page.waitForRequest('**/api/v1/compare?*');
+      await page.goto(`/?left_venue=hyperliquid_perp&left_market=${encodeURIComponent(symbol)}&right_venue=aster_perp&right_market=${base}USDT`);
+      expect(new URL((await request).url()).searchParams.get('left_market')).toBe(symbol);
+      await expect(page.locator('#metric-latest')).not.toHaveText('—');
+      await expect(page.locator('#chart-pair')).toHaveText(`${symbol} / ${base}USDT`);
+    }
+    await page.goto('/?left_venue=hyperliquid_perp&left_market=xyz%3ACOPPER&right_venue=ondo_perp&right_market=COPPER-USD.P');
+    await expect(page.locator('#metric-latest')).not.toHaveText('—');
+    await expect(page.locator('#chart-pair')).toHaveText('xyz:COPPER / COPPER-USD.P');
   });
 
   test('does not choose an arbitrary market for an ambiguous search', async ({ page }) => {

@@ -428,7 +428,18 @@ fn parse_hyperliquid_markets(value: &Value, venue: Venue) -> Result<Vec<Market>,
         .iter()
         .filter_map(|row| {
             let symbol = row["name"].as_str()?;
-            let base = symbol.rsplit_once(':').map_or(symbol, |(_, base)| base);
+            // Scope aliases to the deployer's native market, since bare names
+            // such as GOLD can also identify unrelated crypto tokens.
+            // See ALIASES.md for the underlying and price-unit references.
+            let base = match symbol {
+                "io:OAI" => "OPENAI",
+                "xyz:GOLD" => "XAU",
+                "xyz:SILVER" => "XAG",
+                "xyz:PLATINUM" => "XPT",
+                "xyz:PALLADIUM" => "XPD",
+                "xyz:COPPER" => "XCU",
+                _ => symbol.rsplit_once(':').map_or(symbol, |(_, base)| base),
+            };
             Some(Market {
                 symbol: symbol.into(),
                 base: base.into(),
@@ -633,7 +644,14 @@ async fn ondo_markets(client: &Client, venue: Venue) -> Result<Vec<Market>, AppE
         .filter_map(|row| {
             Some(Market {
                 symbol: row["market"].as_str()?.into(),
-                base: row["baseCurrency"].as_str().unwrap_or_default().into(),
+                // Preserve existing XYZ/Ondo copper comparisons after XYZ's
+                // commodity base is normalized to the XCU notation.
+                base: if row["market"].as_str() == Some("COPPER-USD.P") {
+                    "XCU"
+                } else {
+                    row["baseCurrency"].as_str().unwrap_or_default()
+                }
+                .into(),
                 quote: row["quoteCurrency"].as_str().unwrap_or_default().into(),
                 active: !row["disabled"].as_bool().unwrap_or(false),
             })
@@ -929,6 +947,28 @@ mod tests {
         assert_eq!(markets[0].normalized_symbol(), "SPCX/USD");
         assert!(markets[0].active);
         assert!(!markets[1].active);
+    }
+
+    #[test]
+    fn hyperliquid_aliases_preserve_symbols_and_scope_underlying_matches() {
+        for (symbol, expected) in [
+            ("io:OAI", "OPENAI"),
+            ("xyz:GOLD", "XAU"),
+            ("xyz:SILVER", "XAG"),
+            ("xyz:PLATINUM", "XPT"),
+            ("xyz:PALLADIUM", "XPD"),
+            ("xyz:COPPER", "XCU"),
+            ("GOLD", "GOLD"),
+            ("other:GOLD", "GOLD"),
+            ("other:OAI", "OAI"),
+            ("SPX", "SPX"),
+            ("kPEPE", "KPEPE"),
+        ] {
+            let value = json!({"universe": [{"name": symbol}]});
+            let markets = parse_hyperliquid_markets(&value, Venue::HyperliquidPerp).unwrap();
+            assert_eq!(markets[0].symbol, symbol);
+            assert_eq!(markets[0].base.to_uppercase(), expected);
+        }
     }
 
     #[test]
