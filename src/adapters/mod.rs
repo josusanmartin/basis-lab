@@ -84,6 +84,11 @@ fn normalize(mut candles: Vec<Candle>, request: &CandleRequest) -> Vec<Candle> {
 
 async fn read_json(response: Response, venue: Venue) -> Result<Value, AppError> {
     let status = response.status();
+    let retry_after_seconds = response
+        .headers()
+        .get(reqwest::header::RETRY_AFTER)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.parse().ok());
     if response
         .content_length()
         .is_some_and(|size| size > MAX_UPSTREAM_BYTES)
@@ -99,6 +104,17 @@ async fn read_json(response: Response, venue: Venue) -> Result<Value, AppError> 
     }
     if !status.is_success() {
         let excerpt = String::from_utf8_lossy(&bytes);
+        if matches!(status.as_u16(), 418 | 429) {
+            let message = serde_json::from_slice::<Value>(&bytes)
+                .ok()
+                .and_then(|value| value["msg"].as_str().map(str::to_owned))
+                .unwrap_or_else(|| excerpt.chars().take(240).collect());
+            return Err(AppError::RateLimited {
+                venue: venue.id().into(),
+                message,
+                retry_after_seconds,
+            });
+        }
         return Err(upstream(
             venue,
             format!(
@@ -976,6 +992,31 @@ mod tests {
         assert!(binance_perpetual_contract(Some("PERPETUAL")));
         assert!(binance_perpetual_contract(Some("TRADIFI_PERPETUAL")));
         assert!(!binance_perpetual_contract(Some("CURRENT_QUARTER")));
+    }
+
+    #[tokio::test]
+    async fn upstream_rate_limits_are_classified_without_losing_retry_after() {
+        use wiremock::{Mock, MockServer, ResponseTemplate, matchers::method};
+
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(
+                ResponseTemplate::new(418)
+                    .insert_header("retry-after", "90")
+                    .set_body_json(json!({"code": -1003, "msg": "too many requests"})),
+            )
+            .mount(&server)
+            .await;
+        let response = Client::new().get(server.uri()).send().await.unwrap();
+        let error = read_json(response, Venue::BinancePerp).await.unwrap_err();
+
+        assert!(matches!(
+            error,
+            AppError::RateLimited {
+                retry_after_seconds: Some(90),
+                ..
+            }
+        ));
     }
 
     #[test]

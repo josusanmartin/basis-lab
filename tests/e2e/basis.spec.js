@@ -189,6 +189,54 @@ test.describe('Basis Lab browser workflow', () => {
     await expect(page.locator('#chart-subtitle')).toContainText('latest 72 hours available');
   });
 
+  test('falls back to direct Binance candles after a shared API IP ban', async ({ page }) => {
+    await page.addInitScript(() => {
+      const nativeSetInterval = window.setInterval;
+      window.__basisIntervalDelays = [];
+      window.setInterval = (handler, delay, ...args) => {
+        window.__basisIntervalDelays.push(delay);
+        return nativeSetInterval(handler, delay, ...args);
+      };
+    });
+    await mockComparisonApi(page);
+    let comparisonRequests = 0;
+    let directBinanceRequests = 0;
+    const step = 60_000;
+    const end = Math.floor(Date.now() / step) * step;
+    const times = Array.from({ length: 120 }, (_, index) => end - (119 - index) * step);
+    await page.route('**/api/v1/compare?*', route => {
+      comparisonRequests += 1;
+      return route.fulfill({
+        status: 502,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: { code: 'upstream_error', message: 'venue `binance_perp` rejected the request: HTTP 418 I\'m a teapot: IP banned until 1789443948619' } })
+      });
+    });
+    await page.route('https://fapi.binance.com/fapi/v1/klines?*', route => {
+      directBinanceRequests += 1;
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(times.map((time, index) => [time, '100', '101', '99', String(100 + index / 1000), '25']))
+      });
+    });
+    await page.route('**/api/v1/candles?*', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ candles: times.map((time, index) => ({ time, open: 99.8, high: 100.8, low: 98.8, close: 99.8 + index / 1000, volume: 20 })) })
+    }));
+
+    await page.goto('/?left_venue=binance_perp&left_market=BTCUSDT&right_venue=bybit_perp&right_market=BTCUSDT');
+
+    await expect(page.locator('#metric-latest')).not.toHaveText('—');
+    await expect(page.locator('#chart-subtitle')).toContainText('120 aligned 1m candles');
+    await expect(page.locator('#volume-a-legend')).toBeVisible();
+    await expect(page.locator('#volume-b-legend')).toBeVisible();
+    expect(comparisonRequests).toBe(1);
+    expect(directBinanceRequests).toBe(1);
+    expect(await page.evaluate(() => window.__basisIntervalDelays)).not.toContain(30_000);
+  });
+
   test('recovers from transient platform routing misses', async ({ page }) => {
     let venueAttempts = 0;
     await mockComparisonApi(page);
