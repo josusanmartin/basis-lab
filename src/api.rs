@@ -27,7 +27,10 @@ use crate::{
         Candle, CandleRequest, Interval, Market, TickerListing, Venue, VenueInfo, canonical_asset,
         compact_ticker, contract_unit_asset,
     },
-    service::{BASIS_POINT_SCALE, MarketDataService, TICKER_CACHE_TTL_SECONDS},
+    service::{
+        BASIS_POINT_SCALE, DEFAULT_BINANCE_REQUEST_WEIGHT_PER_MINUTE, MarketDataService,
+        TICKER_CACHE_TTL_SECONDS,
+    },
 };
 
 const MAX_LIMIT: usize = 1500;
@@ -41,8 +44,20 @@ pub struct AppState {
 
 impl AppState {
     pub fn new(max_concurrent_upstream_requests: usize) -> Self {
+        Self::with_limits(
+            max_concurrent_upstream_requests,
+            DEFAULT_BINANCE_REQUEST_WEIGHT_PER_MINUTE,
+        )
+    }
+
+    pub fn with_limits(
+        max_concurrent_upstream_requests: usize,
+        binance_request_weight_per_minute: u32,
+    ) -> Self {
         Self {
-            service: MarketDataService::new(),
+            service: MarketDataService::with_binance_weight_limit(
+                binance_request_weight_per_minute,
+            ),
             permits: Arc::new(Semaphore::new(max_concurrent_upstream_requests.max(1))),
         }
     }

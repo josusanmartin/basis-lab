@@ -1,8 +1,13 @@
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::{
+    collections::HashMap,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use futures::future::join_all;
 use moka::future::Cache;
 use reqwest::Client;
+use tokio::sync::Mutex;
 
 use crate::{
     adapters,
@@ -15,6 +20,54 @@ use crate::{
 
 pub const BASIS_POINT_SCALE: f64 = 10_000.0;
 pub const TICKER_CACHE_TTL_SECONDS: u64 = 300;
+pub const DEFAULT_BINANCE_REQUEST_WEIGHT_PER_MINUTE: u32 = 300;
+
+#[derive(Clone)]
+struct BinanceRateLimiter {
+    capacity: f64,
+    refill_per_second: f64,
+    state: Arc<Mutex<BinanceRateState>>,
+}
+
+struct BinanceRateState {
+    tokens: f64,
+    updated_at: Instant,
+}
+
+impl BinanceRateLimiter {
+    fn new(weight_per_minute: u32) -> Self {
+        let capacity = weight_per_minute.max(1) as f64;
+        Self {
+            capacity,
+            refill_per_second: capacity / 60.0,
+            state: Arc::new(Mutex::new(BinanceRateState {
+                tokens: capacity,
+                updated_at: Instant::now(),
+            })),
+        }
+    }
+
+    async fn reserve(&self, venue: Venue, weight: u32) -> Result<(), AppError> {
+        let mut state = self.state.lock().await;
+        let now = Instant::now();
+        state.tokens = (state.tokens
+            + now.duration_since(state.updated_at).as_secs_f64() * self.refill_per_second)
+            .min(self.capacity);
+        state.updated_at = now;
+        if state.tokens >= weight as f64 {
+            state.tokens -= weight as f64;
+            return Ok(());
+        }
+        let retry_after_seconds =
+            ((weight as f64 - state.tokens) / self.refill_per_second).ceil() as u64;
+        Err(AppError::RateLimited {
+            venue: venue.id().into(),
+            message: "local Binance request-weight budget exhausted; upstream request was not sent"
+                .into(),
+            retry_after_seconds: Some(retry_after_seconds.max(1)),
+        })
+    }
+}
 
 #[derive(Clone)]
 pub struct MarketDataService {
@@ -22,10 +75,15 @@ pub struct MarketDataService {
     candle_cache: Cache<CandleRequest, Arc<Vec<Candle>>>,
     market_cache: Cache<Venue, Arc<Vec<Market>>>,
     ticker_cache: Cache<(), Arc<Vec<TickerListing>>>,
+    binance_rate_limiter: BinanceRateLimiter,
 }
 
 impl MarketDataService {
     pub fn new() -> Self {
+        Self::with_binance_weight_limit(DEFAULT_BINANCE_REQUEST_WEIGHT_PER_MINUTE)
+    }
+
+    pub fn with_binance_weight_limit(weight_per_minute: u32) -> Self {
         let client = Client::builder()
             .user_agent(concat!("basis-lab/", env!("CARGO_PKG_VERSION")))
             .connect_timeout(Duration::from_secs(4))
@@ -50,14 +108,23 @@ impl MarketDataService {
                 .max_capacity(1)
                 .time_to_live(Duration::from_secs(TICKER_CACHE_TTL_SECONDS))
                 .build(),
+            binance_rate_limiter: BinanceRateLimiter::new(weight_per_minute),
         }
     }
 
     pub async fn candles(&self, request: CandleRequest) -> Result<Arc<Vec<Candle>>, AppError> {
+        let request = canonical_candle_request(request);
+        if request.from > request.to {
+            return Ok(Arc::new(Vec::new()));
+        }
         let client = self.client.clone();
         let fetch_request = request.clone();
+        let rate_limiter = self.binance_rate_limiter.clone();
         self.candle_cache
             .try_get_with(request, async move {
+                if let Some(weight) = binance_candle_weight(&fetch_request) {
+                    rate_limiter.reserve(fetch_request.venue, weight).await?;
+                }
                 adapters::fetch_candles(&client, &fetch_request)
                     .await
                     .map(Arc::new)
@@ -68,8 +135,12 @@ impl MarketDataService {
 
     pub async fn markets(&self, venue: Venue) -> Result<Arc<Vec<Market>>, AppError> {
         let client = self.client.clone();
+        let rate_limiter = self.binance_rate_limiter.clone();
         self.market_cache
             .try_get_with(venue, async move {
+                if let Some(weight) = binance_market_weight(venue) {
+                    rate_limiter.reserve(venue, weight).await?;
+                }
                 adapters::fetch_markets(&client, venue).await.map(Arc::new)
             })
             .await
@@ -130,6 +201,39 @@ impl MarketDataService {
         let (left_candles, right_candles) =
             tokio::try_join!(self.candles(left.clone()), self.candles(right.clone()))?;
         compare_candles(&left, &right, &left_candles, &right_candles, scale)
+    }
+}
+
+fn canonical_candle_request(mut request: CandleRequest) -> CandleRequest {
+    let step = request.interval.millis;
+    let from_floor = request.from.div_euclid(step) * step;
+    request.from = if from_floor == request.from {
+        from_floor
+    } else {
+        from_floor.saturating_add(step)
+    };
+    request.to = request.to.div_euclid(step) * step;
+    request
+}
+
+fn binance_candle_weight(request: &CandleRequest) -> Option<u32> {
+    match request.venue {
+        Venue::BinanceSpot => Some(2),
+        Venue::BinancePerp => Some(match request.limit.min(1500) {
+            0..100 => 1,
+            100..500 => 2,
+            500..=1000 => 5,
+            _ => 10,
+        }),
+        _ => None,
+    }
+}
+
+fn binance_market_weight(venue: Venue) -> Option<u32> {
+    match venue {
+        Venue::BinanceSpot => Some(4),
+        Venue::BinancePerp => Some(1),
+        _ => None,
     }
 }
 
@@ -284,6 +388,52 @@ mod tests {
             close,
             volume: None,
         }
+    }
+
+    #[test]
+    fn candle_cache_keys_share_equivalent_opening_timestamp_windows() {
+        let mut first = request(Venue::BinancePerp);
+        first.from = 60_001;
+        first.to = 120_030;
+        let mut second = first.clone();
+        second.from = 119_999;
+        second.to = 120_059;
+
+        assert_eq!(
+            canonical_candle_request(first),
+            canonical_candle_request(second)
+        );
+        assert_eq!(
+            canonical_candle_request(request(Venue::BinancePerp)).from,
+            0
+        );
+    }
+
+    #[test]
+    fn binance_candle_weights_follow_the_requested_limit_tiers() {
+        let mut request = request(Venue::BinancePerp);
+        for (limit, weight) in [(99, 1), (100, 2), (499, 2), (500, 5), (1000, 5), (1001, 10)] {
+            request.limit = limit;
+            assert_eq!(binance_candle_weight(&request), Some(weight));
+        }
+        request.venue = Venue::BybitPerp;
+        assert_eq!(binance_candle_weight(&request), None);
+    }
+
+    #[tokio::test]
+    async fn binance_token_bucket_rejects_before_exceeding_its_budget() {
+        let limiter = BinanceRateLimiter::new(10);
+        limiter.reserve(Venue::BinancePerp, 5).await.unwrap();
+        limiter.reserve(Venue::BinancePerp, 5).await.unwrap();
+        let error = limiter.reserve(Venue::BinancePerp, 1).await.unwrap_err();
+
+        assert!(matches!(
+            error,
+            AppError::RateLimited {
+                retry_after_seconds: Some(6),
+                ..
+            }
+        ));
     }
 
     #[test]

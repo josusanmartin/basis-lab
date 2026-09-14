@@ -45,6 +45,7 @@ Open <http://localhost:8080>. Configuration:
 
 - `PORT` — listen port, default `8080`
 - `MAX_UPSTREAM_CONCURRENCY` — maximum active API request groups, default `64`
+- `BINANCE_REQUEST_WEIGHT_PER_MINUTE` — Binance REST token-bucket capacity and per-minute refill, default `300`
 - `RUST_LOG` — tracing filter, default `basis_lab=info,tower_http=info`
 
 Or use Docker:
@@ -79,7 +80,7 @@ Endpoints:
 - `GET /api/v1/candles?venue=...&market=...&interval=...&from=...&to=...&limit=...`
 - `GET /api/v1/compare?left_venue=...&left_market=...&right_venue=...&right_market=...&interval=...&from=...&to=...&limit=...&scale=10000`
 
-Limits are enforced before upstream calls: 1,500 output candles, 366 calendar days, 20,000 source intervals, market identifiers up to 64 safe ASCII characters, a 12 MiB response cap, and a bounded concurrency queue. Successful source candles are cached for 15 seconds; native and normalized ticker catalogs for five minutes. Searches match either venue notation (`BTC-USDT-SWAP`) or canonical notation (`BTC/USDT`) and are relevance-ranked. Every cache has a fixed entry capacity.
+Limits are enforced before upstream calls: 1,500 output candles, 366 calendar days, 20,000 source intervals, market identifiers up to 64 safe ASCII characters, a 12 MiB response cap, a bounded concurrency queue, and a process-wide Binance token bucket with 300 weight capacity and a 300 weight/minute refill by default. Binance REST weight is reserved only on cache misses; requests that exceed the local budget receive `429` without contacting Binance. Successful source candles are cached for 15 seconds using interval-aligned `from` and `to` keys; native and normalized ticker catalogs are cached for five minutes. Searches match either venue notation (`BTC-USDT-SWAP`) or canonical notation (`BTC/USDT`) and are relevance-ranked. Every cache has a fixed entry capacity.
 
 ## Candle math
 

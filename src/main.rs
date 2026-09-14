@@ -1,6 +1,6 @@
 use std::{env, net::SocketAddr};
 
-use basis_lab::{AppState, router};
+use basis_lab::{AppState, router, service::DEFAULT_BINANCE_REQUEST_WEIGHT_PER_MINUTE};
 use tokio::net::TcpListener;
 use tracing::{info, warn};
 use tracing_subscriber::EnvFilter;
@@ -23,13 +23,17 @@ async fn main() {
         .ok()
         .and_then(|value| value.parse().ok())
         .unwrap_or(64);
+    let binance_request_weight = env::var("BINANCE_REQUEST_WEIGHT_PER_MINUTE")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(DEFAULT_BINANCE_REQUEST_WEIGHT_PER_MINUTE);
     let address = SocketAddr::from(([0, 0, 0, 0], port));
     let listener = TcpListener::bind(address)
         .await
         .expect("failed to bind server port");
     info!(%address, "Basis Lab listening");
 
-    let state = AppState::new(concurrency);
+    let state = AppState::with_limits(concurrency, binance_request_weight);
     let catalog = state.service.clone();
     tokio::spawn(async move {
         match catalog.tickers().await {

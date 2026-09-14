@@ -10,4 +10,6 @@ services:
         value: basis_lab=info,tower_http=warn
       - key: MAX_UPSTREAM_CONCURRENCY
         value: "32"
+      - key: BINANCE_REQUEST_WEIGHT_PER_MINUTE
+        value: "300"
     autoDeployTrigger: checksPass
