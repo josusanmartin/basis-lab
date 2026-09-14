@@ -47,6 +47,12 @@ test.describe('deployed live Rust service', () => {
     expect(binanceTradFi.ok()).toBeTruthy();
     expect((await binanceTradFi.json()).data.some(market => market.symbol === 'SPCXUSDT')).toBeTruthy();
 
+    const bybitGold = await request.get(new URL('/api/v1/markets?venue=bybit_perp&query=XAU&limit=100', liveApiBaseUrl).href);
+    expect(bybitGold.ok()).toBeTruthy();
+    const bybitGoldSymbols = (await bybitGold.json()).data.map(market => market.symbol);
+    expect(bybitGoldSymbols).toContain('XAUUSDT');
+    expect(bybitGoldSymbols).toContain('XAUTUSDT');
+
     const suggestions = await request.get(new URL('/api/v1/tickers/suggest?source_venue=ondo_perp&source_symbol=SPCX-USD.P&target_venue=hyperliquid_perp', liveApiBaseUrl).href);
     expect(suggestions.ok()).toBeTruthy();
     const suggestionBody = await suggestions.json();

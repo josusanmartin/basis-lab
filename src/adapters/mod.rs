@@ -38,8 +38,7 @@ pub async fn fetch_markets(client: &Client, venue: Venue) -> Result<Vec<Market>,
     let mut markets = match venue {
         Venue::BinanceSpot => binance_markets(client, venue, false).await?,
         Venue::BinancePerp => binance_markets(client, venue, true).await?,
-        Venue::BybitSpot => bybit_markets(client, venue, false).await?,
-        Venue::BybitPerp => bybit_markets(client, venue, true).await?,
+        Venue::BybitSpot | Venue::BybitPerp => bybit_markets(client, venue).await?,
         Venue::HyperliquidPerp => hyperliquid_markets(client, venue).await?,
         Venue::LighterPerp => lighter_markets(client, venue).await?,
         Venue::AsterPerp => aster_markets(client, venue).await?,
@@ -296,6 +295,14 @@ fn bybit_interval(interval: Interval) -> &'static str {
     }
 }
 
+fn bybit_category(venue: Venue) -> &'static str {
+    match venue {
+        Venue::BybitSpot => "spot",
+        Venue::BybitPerp => "linear",
+        _ => unreachable!("Bybit category requested for another venue"),
+    }
+}
+
 async fn bybit_candles(
     client: &Client,
     request: &CandleRequest,
@@ -325,13 +332,14 @@ async fn bybit_candles(
         .collect()
 }
 
-async fn bybit_markets(client: &Client, venue: Venue, spot: bool) -> Result<Vec<Market>, AppError> {
+async fn bybit_markets(client: &Client, venue: Venue) -> Result<Vec<Market>, AppError> {
+    let spot = matches!(venue, Venue::BybitSpot);
     let mut output = Vec::new();
     let mut cursor = String::new();
     loop {
         let mut url = Url::parse("https://api.bybit.com/v5/market/instruments-info").unwrap();
         url.query_pairs_mut()
-            .append_pair("category", if spot { "spot" } else { "linear" })
+            .append_pair("category", bybit_category(venue))
             .append_pair("limit", "1000");
         if !cursor.is_empty() {
             url.query_pairs_mut().append_pair("cursor", &cursor);
@@ -992,6 +1000,12 @@ mod tests {
         assert!(binance_perpetual_contract(Some("PERPETUAL")));
         assert!(binance_perpetual_contract(Some("TRADIFI_PERPETUAL")));
         assert!(!binance_perpetual_contract(Some("CURRENT_QUARTER")));
+    }
+
+    #[test]
+    fn bybit_market_categories_match_the_selected_venue() {
+        assert_eq!(bybit_category(Venue::BybitSpot), "spot");
+        assert_eq!(bybit_category(Venue::BybitPerp), "linear");
     }
 
     #[tokio::test]
