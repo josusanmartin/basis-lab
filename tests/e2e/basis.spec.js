@@ -13,6 +13,7 @@ async function mockComparisonApi(page) {
       { symbol: 'ETHUSDT', normalized_symbol: 'ETH/USDT', base: 'ETH', quote: 'USDT', active: true }
     ];
     const venueMarkets = {
+      safetrade_spot: defaultMarkets.map(market => ({ ...market, symbol: market.symbol.toLowerCase() })),
       mexc_perp: defaultMarkets.map(market => ({ ...market, symbol: market.symbol.replace(/USDT$/, '_USDT') })),
       ondo_perp: [
         { symbol: 'COPPER-USD.P', normalized_symbol: 'COPPER/USD', base: 'COPPER', quote: 'USD', active: true },
@@ -456,6 +457,64 @@ test.describe('Basis Lab browser workflow', () => {
     await expect(page.locator('#chart-subtitle')).not.toContainText('LIVE');
   });
 
+  test('polls SafeTrade REST k-lines alongside a venue WebSocket', async ({ page }) => {
+    await page.addInitScript(() => {
+      class MockWebSocket {
+        static CONNECTING = 0;
+        static OPEN = 1;
+        static CLOSING = 2;
+        static CLOSED = 3;
+        constructor(url) {
+          this.url = url;
+          this.readyState = MockWebSocket.CONNECTING;
+          setTimeout(() => {
+            this.readyState = MockWebSocket.OPEN;
+            this.onopen?.({ type: 'open' });
+          });
+        }
+        send(payload) {
+          const message = JSON.parse(payload);
+          const time = Math.floor(Date.now() / 60_000) * 60_000;
+          if (this.url.includes('bybit') && message.op === 'subscribe') {
+            setTimeout(() => this.onmessage?.({ data: JSON.stringify({ topic: message.args[0], data: [{ start: time, open: '81490', high: '81510', low: '81480', close: '81500', volume: '12.5' }] }) }), 10);
+          }
+        }
+        close() {
+          this.readyState = MockWebSocket.CLOSED;
+          this.onclose?.({ code: 1000 });
+        }
+      }
+      window.WebSocket = MockWebSocket;
+    });
+    await mockComparisonApi(page);
+    const klineRequests = [];
+    await page.route('https://safetrade.com/api/v2/trade/public/markets/*/k-line?*', route => {
+      klineRequests.push(new URL(route.request().url()));
+      const time = Math.floor(Date.now() / 60_000) * 60;
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        headers: { 'access-control-allow-origin': '*' },
+        body: JSON.stringify([[time, '81560', '81570', '81550', '81566.5', '0.0421']])
+      });
+    });
+    await page.goto('/?left_venue=safetrade_spot&left_market=btcusdt&right_venue=bybit_spot&right_market=BTCUSDT');
+    await expect(page.locator('#metric-latest')).not.toHaveText('—');
+
+    await page.locator('#follow-live').click();
+    await expect(page.locator('#live-a-status')).toHaveText('STREAMING');
+    await expect(page.locator('#live-b-status')).toHaveText('STREAMING');
+    await expect(page.locator('#live-a-price')).toContainText('81,566');
+    await expect(page.locator('#live-b-price')).toContainText('81,500');
+    await expect(page.locator('#chart-subtitle')).toContainText('A REST-polled');
+    expect(klineRequests[0].pathname).toBe('/api/v2/trade/public/markets/btcusdt/k-line');
+    expect(klineRequests[0].searchParams.get('period')).toBe('1');
+    expect(klineRequests[0].searchParams.get('limit')).toBe('3');
+
+    await page.locator('#follow-live').click();
+    await expect(page.locator('#chart-subtitle')).not.toContainText('LIVE');
+  });
+
   test('exposes agent-facing API metadata and rejects unsafe inputs', async ({ request, page }) => {
     const health = await request.get('/api/v1/health');
     expect(health.ok()).toBeTruthy();
@@ -463,7 +522,7 @@ test.describe('Basis Lab browser workflow', () => {
 
     const venues = await request.get('/api/v1/venues');
     const venueBody = await venues.json();
-    expect(venueBody.data).toHaveLength(12);
+    expect(venueBody.data).toHaveLength(13);
     expect(venueBody.data.map(item => item.id)).toContain('ondo_perp');
 
     const bad = await request.get('/api/v1/candles?venue=bybit_perp&market=../secret?x=1&interval=1h&from=1&to=2');

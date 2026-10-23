@@ -30,6 +30,7 @@ pub async fn fetch_candles(
         Venue::MexcPerp => mexc_perp_candles(client, request).await?,
         Venue::OkxSpot => okx_candles(client, request, false).await?,
         Venue::OkxPerp => okx_candles(client, request, true).await?,
+        Venue::SafetradeSpot => safetrade_candles(client, request).await?,
     };
     Ok(normalize(raw, request))
 }
@@ -47,6 +48,7 @@ pub async fn fetch_markets(client: &Client, venue: Venue) -> Result<Vec<Market>,
         Venue::MexcPerp => mexc_perp_markets(client, venue).await?,
         Venue::OkxSpot => okx_markets(client, venue, false).await?,
         Venue::OkxPerp => okx_markets(client, venue, true).await?,
+        Venue::SafetradeSpot => safetrade_markets(client, venue).await?,
     };
     markets.sort_unstable_by(|a, b| a.symbol.cmp(&b.symbol));
     markets.dedup_by(|a, b| a.symbol == b.symbol);
@@ -900,6 +902,83 @@ async fn okx_markets(client: &Client, venue: Venue, spot: bool) -> Result<Vec<Ma
         .collect())
 }
 
+fn safetrade_period(interval: Interval) -> &'static str {
+    match interval.name {
+        "1m" => "1",
+        "3m" => "3",
+        "5m" => "5",
+        "15m" => "15",
+        "30m" => "30",
+        "1h" => "60",
+        "2h" => "120",
+        "4h" => "240",
+        "1d" => "1440",
+        _ => unreachable!(),
+    }
+}
+
+async fn safetrade_candles(
+    client: &Client,
+    request: &CandleRequest,
+) -> Result<Vec<Candle>, AppError> {
+    let venue = request.venue;
+    // SafeTrade market ids are lowercase (`btcusdt`); with both bounds set, k-line returns
+    // the newest `limit` bars in the window, so the default of 30 must be raised explicitly.
+    let mut url = Url::parse(&format!(
+        "https://safetrade.com/api/v2/trade/public/markets/{}/k-line",
+        request.market.to_ascii_lowercase()
+    ))
+    .unwrap();
+    url.query_pairs_mut()
+        .append_pair("period", safetrade_period(request.interval))
+        .append_pair("time_from", &(request.from / 1000).to_string())
+        .append_pair("time_to", &(request.to / 1000).to_string())
+        .append_pair("limit", &request.limit.min(10_000).to_string());
+    let value = get(client, venue, url).await?;
+    parse_safetrade_candles(&value, venue)
+}
+
+fn parse_safetrade_candles(value: &Value, venue: Venue) -> Result<Vec<Candle>, AppError> {
+    value
+        .as_array()
+        .ok_or_else(|| upstream(venue, "unexpected candle response"))?
+        .iter()
+        .map(|row| {
+            let mut candle =
+                array_candle(row).ok_or_else(|| upstream(venue, "malformed candle"))?;
+            candle.time *= 1000;
+            Ok(candle)
+        })
+        .collect()
+}
+
+async fn safetrade_markets(client: &Client, venue: Venue) -> Result<Vec<Market>, AppError> {
+    let value = get(
+        client,
+        venue,
+        Url::parse("https://safetrade.com/api/v2/trade/public/markets").unwrap(),
+    )
+    .await?;
+    parse_safetrade_markets(&value, venue)
+}
+
+fn parse_safetrade_markets(value: &Value, venue: Venue) -> Result<Vec<Market>, AppError> {
+    let rows = value
+        .as_array()
+        .ok_or_else(|| upstream(venue, "missing markets"))?;
+    Ok(rows
+        .iter()
+        .filter_map(|row| {
+            Some(Market {
+                symbol: row["id"].as_str()?.into(),
+                base: row["base_unit"].as_str().unwrap_or_default().into(),
+                quote: row["quote_unit"].as_str().unwrap_or_default().into(),
+                active: row["state"].as_str() == Some("enabled"),
+            })
+        })
+        .collect())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1006,6 +1085,31 @@ mod tests {
     fn bybit_market_categories_match_the_selected_venue() {
         assert_eq!(bybit_category(Venue::BybitSpot), "spot");
         assert_eq!(bybit_category(Venue::BybitPerp), "linear");
+    }
+
+    #[test]
+    fn safetrade_parses_second_timestamps_and_lowercase_market_ids() {
+        let candles = parse_safetrade_candles(
+            &json!([[1792722780, "2.2", "2.2", "2.18", "2.18", "709.5218"]]),
+            Venue::SafetradeSpot,
+        )
+        .unwrap();
+        assert_eq!(candles[0].time, 1_792_722_780_000);
+        assert_eq!(candles[0].low, 2.18);
+        assert_eq!(candles[0].volume, Some(709.5218));
+
+        let markets = parse_safetrade_markets(
+            &json!([
+                {"id":"btcusdt","base_unit":"btc","quote_unit":"usdt","state":"enabled"},
+                {"id":"ydabtc","base_unit":"yda","quote_unit":"btc","state":"disabled"}
+            ]),
+            Venue::SafetradeSpot,
+        )
+        .unwrap();
+        assert_eq!(markets[0].symbol, "btcusdt");
+        assert_eq!(markets[0].normalized_symbol(), "BTC/USDT");
+        assert!(markets[0].active);
+        assert!(!markets[1].active);
     }
 
     #[tokio::test]

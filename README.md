@@ -30,8 +30,9 @@ The Render service also hosts the complete UI and agent-callable API on one orig
 | Ondo Perps | Perpetual |
 | MEXC | Spot, perpetual |
 | OKX | Spot, perpetual swap |
+| SafeTrade | Spot |
 
-All adapters use public, unauthenticated market-data APIs. Symbols retain each venue's native format—for example `BTCUSDT`, `BTC_USDT`, `BTC-USDT-SWAP`, `BTC`, `xyz:SPCX`, or `BTC-USD.P`. Hyperliquid discovery dynamically enumerates the default perpetual universe and every active HIP-3 perp DEX. Use the markets endpoint to discover them.
+All adapters use public, unauthenticated market-data APIs. Symbols retain each venue's native format—for example `BTCUSDT`, `BTC_USDT`, `BTC-USDT-SWAP`, `BTC`, `xyz:SPCX`, `BTC-USD.P`, or SafeTrade's lowercase `btcusdt`. Hyperliquid discovery dynamically enumerates the default perpetual universe and every active HIP-3 perp DEX. Use the markets endpoint to discover them.
 
 ## Run locally
 
@@ -97,7 +98,7 @@ With `scale=10000`, values are basis points. Comparisons require matching canoni
 
 The browser defaults to one-minute candles over 24 hours. Its 48- and 72-hour views load in daily chunks; longer one-minute selections show the latest 72 hours available. If a venue imposes a smaller upstream bar window, the adapter returns its newest supported subset instead of failing the comparison. When venues supply volume, the comparison preserves each side separately as `left_volume` and `right_volume`. The chart uses separate stacked A and B volume panes, each normalized independently within the visible window, while tooltips retain the raw values.
 
-“Follow live” keeps that historical window as context, then opens the two venues' public WebSocket feeds in the browser. An animated live market feed shows each leg's latest normalized price and volume, connection state, the latest aligned basis, and a rate-limited update tape. Incoming venue candles are normalized to the selected UTC interval and joined only when A and B have the same candle-opening timestamp; the current comparison candle, statistics, table, and independent volume panes update in place. Connections retry with exponential backoff and resubscribe after disconnects. Binance, Bybit, Hyperliquid (including HIP-3 symbols), Lighter, Aster, Ondo, MEXC, and OKX feeds are supported. Ondo's unauthenticated stream publishes mark-price ticks rather than trade candles, so its live OHLC is visibly labeled as mark-derived and does not invent volume. Binance perpetual also subscribes to BBO and transparently labels a midpoint-derived fallback if its kline channel is temporarily silent.
+“Follow live” keeps that historical window as context, then opens the two venues' public WebSocket feeds in the browser. An animated live market feed shows each leg's latest normalized price and volume, connection state, the latest aligned basis, and a rate-limited update tape. Incoming venue candles are normalized to the selected UTC interval and joined only when A and B have the same candle-opening timestamp; the current comparison candle, statistics, table, and independent volume panes update in place. Connections retry with exponential backoff and resubscribe after disconnects. Binance, Bybit, Hyperliquid (including HIP-3 symbols), Lighter, Aster, Ondo, MEXC, and OKX feeds are supported. SafeTrade's public WebSocket rejects third-party origins and does not push k-line updates, so its leg polls the CORS-enabled public k-line endpoint every five seconds and is labeled REST-polled; SafeTrade only emits a bar once the market trades, so quiet markets can lag the other leg. Ondo's unauthenticated stream publishes mark-price ticks rather than trade candles, so its live OHLC is visibly labeled as mark-derived and does not invent volume. Binance perpetual also subscribes to BBO and transparently labels a midpoint-derived fallback if its kline channel is temporarily silent.
 
 ## Verification
 
@@ -110,7 +111,7 @@ npx playwright install chromium
 npm run test:e2e
 ```
 
-The deterministic E2E suite boots the Rust binary, loads a Bybit/MEXC WLFI fixture through the UI, validates chart and analytics output, simulates and aligns Hyperliquid/Ondo WebSocket updates, swaps legs, changes intervals, checks the API documentation and static-preview fallback, and repeats core checks at a mobile viewport. Because venue adapters call external APIs, the 12-adapter live smoke matrix is intentionally separate from deterministic unit and browser tests.
+The deterministic E2E suite boots the Rust binary, loads a Bybit/MEXC WLFI fixture through the UI, validates chart and analytics output, simulates and aligns Hyperliquid/Ondo WebSocket updates, swaps legs, changes intervals, checks the API documentation and static-preview fallback, and repeats core checks at a mobile viewport. Because venue adapters call external APIs, the 13-adapter live smoke matrix is intentionally separate from deterministic unit and browser tests.
 
 ## Production notes
 

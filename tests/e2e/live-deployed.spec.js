@@ -30,7 +30,7 @@ test.describe('deployed live Rust service', () => {
 
     const venues = await request.get(new URL('/api/v1/venues', liveApiBaseUrl).href);
     expect(venues.ok()).toBeTruthy();
-    expect((await venues.json()).data).toHaveLength(12);
+    expect((await venues.json()).data).toHaveLength(13);
 
     const tickers = await request.get(new URL('/api/v1/tickers?query=WLFI%2FUSDT&limit=100', liveApiBaseUrl).href);
     expect(tickers.ok()).toBeTruthy();
@@ -74,7 +74,7 @@ test.describe('deployed live Rust service', () => {
     const spec = await request.get(new URL('/openapi.json', liveApiBaseUrl).href);
     const contract = await spec.json();
     expect(contract.components.schemas.ComparisonResponse.required).toContain('candles');
-    expect(contract.components.schemas.Venue.enum).toHaveLength(12);
+    expect(contract.components.schemas.Venue.enum).toHaveLength(13);
     expect(pageErrors).toEqual([]);
   });
 });

@@ -5,6 +5,7 @@
   const bybitIntervals = {'1m':'1','3m':'3','5m':'5','15m':'15','30m':'30','1h':'60','2h':'120','4h':'240','1d':'D'};
   const mexcIntervals = {'1m':'Min1','5m':'Min5','15m':'Min15','30m':'Min30','1h':'Min60','4h':'Hour4','1d':'Day1'};
   const okxIntervals = {'1m':'1m','3m':'3m','5m':'5m','15m':'15m','30m':'30m','1h':'1H','2h':'2H','4h':'4H','1d':'1Dutc'};
+  const safetradePeriods = {'1m':1,'3m':3,'5m':5,'15m':15,'30m':30,'1h':60,'2h':120,'4h':240,'1d':1440};
 
   function milliseconds(value){const number=Number(value);return number>0&&number<1e12?number*1000:number}
   function candle(time,open,high,low,close,volume){
@@ -51,6 +52,9 @@
   function mexcSpotDescriptor(market,interval){const channel=`spot@public.kline.v3.api.pb@${market}@${mexcIntervals[interval]}`;return{url:'wss://wbs-api.mexc.com/ws',subscribe:{method:'SUBSCRIPTION',params:[channel]},heartbeat:{method:'PING'},heartbeatMs:20_000,binaryType:'arraybuffer',parse:mexcSpotCandles}}
   function mexcPerpDescriptor(market,interval){const symbol=market.replaceAll('-','_');return{url:'wss://contract.mexc.com/edge',subscribe:{method:'sub.kline',param:{symbol,interval:mexcIntervals[interval]}},heartbeat:{method:'ping'},heartbeatMs:20_000,parse:data=>{const message=parseJson(data),row=message?.channel==='push.kline'?message.data:null,value=row&&candle(row.t,row.o,row.h,row.l,row.c,row.v??row.a);return value?[value]:[]}}}
   function okxDescriptor(market,interval){const channel=`candle${okxIntervals[interval]}`,arg={channel,instId:market};return{url:'wss://ws.okx.com:8443/ws/v5/business',subscribe:{op:'subscribe',args:[arg]},heartbeat:'ping',heartbeatMs:20_000,parse:data=>{const message=parseJson(data);if(message?.arg?.channel!==channel||message.arg.instId!==market)return[];return(message.data||[]).map(row=>candle(row[0],row[1],row[2],row[3],row[4],row[5])).filter(Boolean)}}}
+  // SafeTrade's public WebSocket rejects third-party origins and does not push k-line updates, so its
+  // CORS-enabled REST k-line is polled for the newest bars instead.
+  function safetradeDescriptor(market,interval,intervalMillis){const symbol=encodeURIComponent(market.toLowerCase()),period=safetradePeriods[interval];return{kind:'REST-polled',pollMs:5_000,poll:async signal=>{const from=Math.floor((Date.now()-intervalMillis*2)/1000),response=await fetch(`https://safetrade.com/api/v2/trade/public/markets/${symbol}/k-line?period=${period}&time_from=${from}&limit=3`,{headers:{Accept:'application/json'},signal});if(!response.ok)throw new Error(`SafeTrade k-line failed (${response.status})`);const rows=await response.json();return Array.isArray(rows)?rows.map(row=>Array.isArray(row)&&candle(row[0],row[1],row[2],row[3],row[4],row[5])).filter(Boolean):[]}}}
   async function descriptor({venue,market,interval,intervalMillis}){
     if(!market)throw new Error('Choose a market before following live');
     switch(venue){
@@ -63,6 +67,7 @@
       case'mexc_spot':return mexcSpotDescriptor(market,interval);
       case'mexc_perp':return mexcPerpDescriptor(market,interval);
       case'okx_spot':case'okx_perp':return okxDescriptor(market,interval);
+      case'safetrade_spot':return safetradeDescriptor(market,interval,intervalMillis);
       default:throw new Error(`Live WebSocket feed is not configured for ${venue}`);
     }
   }

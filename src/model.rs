@@ -19,10 +19,11 @@ pub enum Venue {
     MexcPerp,
     OkxSpot,
     OkxPerp,
+    SafetradeSpot,
 }
 
 impl Venue {
-    pub const ALL: [Self; 12] = [
+    pub const ALL: [Self; 13] = [
         Self::BinanceSpot,
         Self::BinancePerp,
         Self::BybitSpot,
@@ -35,6 +36,7 @@ impl Venue {
         Self::MexcPerp,
         Self::OkxSpot,
         Self::OkxPerp,
+        Self::SafetradeSpot,
     ];
 
     pub fn id(self) -> &'static str {
@@ -51,6 +53,7 @@ impl Venue {
             Self::MexcPerp => "mexc_perp",
             Self::OkxSpot => "okx_spot",
             Self::OkxPerp => "okx_perp",
+            Self::SafetradeSpot => "safetrade_spot",
         }
     }
 
@@ -68,12 +71,17 @@ impl Venue {
             Self::MexcPerp => "MEXC Perpetual",
             Self::OkxSpot => "OKX Spot",
             Self::OkxPerp => "OKX Perpetual",
+            Self::SafetradeSpot => "SafeTrade Spot",
         }
     }
 
     pub fn market_type(self) -> &'static str {
         match self {
-            Self::BinanceSpot | Self::BybitSpot | Self::MexcSpot | Self::OkxSpot => "spot",
+            Self::BinanceSpot
+            | Self::BybitSpot
+            | Self::MexcSpot
+            | Self::OkxSpot
+            | Self::SafetradeSpot => "spot",
             _ => "perpetual",
         }
     }

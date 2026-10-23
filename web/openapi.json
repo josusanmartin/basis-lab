@@ -177,7 +177,7 @@
     "schemas": {
       "Venue": {
         "type": "string",
-        "enum": ["binance_spot", "binance_perp", "bybit_spot", "bybit_perp", "hyperliquid_perp", "lighter_perp", "aster_perp", "ondo_perp", "mexc_spot", "mexc_perp", "okx_spot", "okx_perp"]
+        "enum": ["binance_spot", "binance_perp", "bybit_spot", "bybit_perp", "hyperliquid_perp", "lighter_perp", "aster_perp", "ondo_perp", "mexc_spot", "mexc_perp", "okx_spot", "okx_perp", "safetrade_spot"]
       },
       "Interval": {
         "type": "string",
