@@ -7,6 +7,7 @@ Native symbols are preserved for candle requests and WebSocket subscriptions.
 | --- | --- | --- | --- |
 | `io:ANTH` | `ANTHROPIC` | Billions of USD market cap / USD per reference share with 1 billion reference shares: numerically 1:1 | Aster `ANTHROPICUSDT` |
 | `io:OAI` | `OPENAI` | Same 1 billion reference-share convention | Aster `OPENAIUSDT` |
+| `io:PRL` | `PEARL` | USD per Pearl token (pre-listing perpetual; Hyperliquid's app URL shows `io:PEARL`) | Aster `PEARLUSDT`, SafeTrade `pearlusdt` |
 | `xyz:GOLD` | `XAU` | USD per troy ounce of gold | Lighter `XAU` |
 | `xyz:SILVER` | `XAG` | USD per troy ounce of silver | Lighter `XAG` |
 | `xyz:PLATINUM` | `XPT` | USD per troy ounce of platinum | Lighter `XPT` |
@@ -15,12 +16,12 @@ Native symbols are preserved for candle requests and WebSocket subscriptions.
 
 Sources:
 
-- [Entropy asset directory](https://docs.entropy.io/asset-directory/pre-ipo-assets) and [pre-IPO denomination](https://docs.entropy.io/market-types/pre-ipo-perpetuals).
+- [Entropy asset directory](https://docs.entropy.io/asset-directory/pre-ipo-assets), [pre-listing assets](https://docs.entropy.io/asset-directory/pre-listing-assets), and [pre-IPO denomination](https://docs.entropy.io/market-types/pre-ipo-perpetuals).
 - [Aster pre-IPO specifications and reference share counts](https://docs.asterdex.com/trading/perpetuals/pre-ipo-perpetuals).
 - [XYZ contract specification index](https://docs.trade.xyz/consolidated-resources/specification-index).
 - [Lighter RWA market specifications](https://docs.lighter.xyz/trading/real-world-assets-rwas/market-specifications).
 
-The six additional aliases after ANTH are scoped to the exact Hyperliquid native
+The seven additional aliases after ANTH are scoped to the exact Hyperliquid native
 markets above in discovery and browser validation. For example, `other:GOLD`
 does not inherit the `xyz:GOLD` alias. The API's normalized base then drives
 search, suggestions, and comparison validation.

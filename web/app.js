@@ -109,7 +109,7 @@
   }
   function assetKey(value){const compact=String(value||'').replace(/[^a-z0-9]/gi,'').toUpperCase();return ({XBT:'BTC',WBTC:'BTC',WETH:'ETH',XDG:'DOGE',US500:'SP500',USA500:'SP500',SPX500:'SP500',ANTH:'ANTHROPIC'})[compact]||compact}
   // Native-market scope and price-unit references are documented in ALIASES.md.
-  const hip3BaseAliases={'io:oai':'OPENAI','xyz:gold':'XAU','xyz:silver':'XAG','xyz:platinum':'XPT','xyz:palladium':'XPD','xyz:copper':'XCU'};
+  const hip3BaseAliases={'io:oai':'OPENAI','io:prl':'PEARL','xyz:gold':'XAU','xyz:silver':'XAG','xyz:platinum':'XPT','xyz:palladium':'XPD','xyz:copper':'XCU'};
   function nativeBaseAlias(venueId,symbol){const native=String(symbol||'').trim().toLowerCase();return(venueId==='hyperliquid_perp'&&hip3BaseAliases[native])||(venueId==='ondo_perp'&&native==='copper-usd.p'&&'XCU')||''}
   function inferredBase(venueId,symbol){const native=String(symbol||'').trim(),alias=nativeBaseAlias(venueId,native);if(alias)return alias;if(venueId==='hyperliquid_perp')return native.split(':').at(-1)||'';if(venueId==='ondo_perp')return native.replace(/-USD\.P$/i,'');return ''}
   function currentBase(side){const {select,input,search}=marketPicker(side),native=input.value.trim(),selected=search.selected;if(selected&&selected.symbol.toUpperCase()===native.toUpperCase())return nativeBaseAlias(select.value,native)||selected.base;return inferredBase(select.value,native)}

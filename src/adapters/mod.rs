@@ -459,6 +459,7 @@ fn parse_hyperliquid_markets(value: &Value, venue: Venue) -> Result<Vec<Market>,
             // See ALIASES.md for the underlying and price-unit references.
             let base = match symbol {
                 "io:OAI" => "OPENAI",
+                "io:PRL" => "PEARL",
                 "xyz:GOLD" => "XAU",
                 "xyz:SILVER" => "XAG",
                 "xyz:PLATINUM" => "XPT",
@@ -1056,6 +1057,7 @@ mod tests {
     fn hyperliquid_aliases_preserve_symbols_and_scope_underlying_matches() {
         for (symbol, expected) in [
             ("io:OAI", "OPENAI"),
+            ("io:PRL", "PEARL"),
             ("xyz:GOLD", "XAU"),
             ("xyz:SILVER", "XAG"),
             ("xyz:PLATINUM", "XPT"),

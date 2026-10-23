@@ -1,5 +1,5 @@
 const { test, expect } = require('@playwright/test');
-const hip3Aliases = [['io:OAI', 'OPENAI'], ['xyz:GOLD', 'XAU'], ['xyz:SILVER', 'XAG'], ['xyz:PLATINUM', 'XPT'], ['xyz:PALLADIUM', 'XPD'], ['xyz:COPPER', 'XCU']];
+const hip3Aliases = [['io:OAI', 'OPENAI'], ['io:PRL', 'PEARL'], ['xyz:GOLD', 'XAU'], ['xyz:SILVER', 'XAG'], ['xyz:PLATINUM', 'XPT'], ['xyz:PALLADIUM', 'XPD'], ['xyz:COPPER', 'XCU']];
 
 async function mockComparisonApi(page) {
   await page.route('**/api/v1/markets?*', route => {

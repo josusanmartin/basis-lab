@@ -352,6 +352,10 @@ async fn ticker_suggestions(
         left_rank
             .cmp(right_rank)
             .then_with(|| {
+                quote_rank(&source.quote, &left.ticker.quote)
+                    .cmp(&quote_rank(&source.quote, &right.ticker.quote))
+            })
+            .then_with(|| {
                 left.ticker
                     .normalized_symbol
                     .cmp(&right.ticker.normalized_symbol)
@@ -374,6 +378,21 @@ async fn ticker_suggestions(
             "data": data,
         })),
     ))
+}
+
+// Venues such as SafeTrade list one base against BTC as well as stablecoins, so prefer the
+// candidate quoted like the source before falling back to alphabetical order.
+fn quote_rank(source_quote: &str, candidate_quote: &str) -> u8 {
+    let source = compact_ticker(source_quote);
+    let candidate = compact_ticker(candidate_quote);
+    let usd = |quote: &str| quote.starts_with("USD") || quote == "FDUSD";
+    if source == candidate {
+        0
+    } else if usd(&source) && usd(&candidate) {
+        1
+    } else {
+        2
+    }
 }
 
 fn equivalence_match(
@@ -433,6 +452,8 @@ fn market_matches(market: &Market, needle: &str) -> bool {
 fn market_search_needle(query: &str) -> String {
     match compact_ticker(query).as_str() {
         "SPACEX" => "SPCX".into(),
+        // Hyperliquid's app labels io:PRL as PEARL in its URLs.
+        "IOPEARL" => "IOPRL".into(),
         compact => compact.into(),
     }
 }
@@ -699,6 +720,9 @@ mod tests {
             0
         );
         assert_eq!(market_search_needle("SpaceX"), "SPCX");
+        assert_eq!(market_search_needle("io:PEARL"), "IOPRL");
+        assert!(quote_rank("USD", "USDT") < quote_rank("USD", "BTC"));
+        assert!(quote_rank("USDT", "USDT") < quote_rank("USDT", "USDC"));
         let spacex = Market {
             symbol: "SPCXUSDT".into(),
             base: "SPCX".into(),
